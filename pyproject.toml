@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "paperhub"
+version = "0.1.0"
+description = "Offline calculations for the paper-hub dashboard"
+requires-python = ">=3.11"
+license = "MIT"
+dependencies = ["fastapi>=0.115,<1", "uvicorn>=0.30,<1", "Pillow>=10,<14", "httpx>=0.27,<1", "python-dotenv>=1,<2"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+
+[tool.setuptools.packages.find]
+include = ["paperhub*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
