@@ -197,11 +197,11 @@ def test_prefill_cached_date_and_small_missing(settings, drawing_font, strata, m
         return original(self, x, y, value, size=size, **kwargs)
     monkeypatch.setattr(Canvas, "text", record)
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
-    assert ("—", 249, 24) in calls
+    assert ("—", 255, 24) in calls
     calls.clear()
     render_png(snapshot(settings, now=1793411985, strata=strata,
                         last_prefill={"value": 131, "at": 1793142000}), settings)
-    assert ("131 t/s（10/28）", 249, 22) in calls
+    assert ("131 t/s（10/28）", 255, 22) in calls
     # A current qualifying request overrides the stored fallback.
     strata["requests"] = [{"prompt_tokens": 1000, "reused": 0, "prompt_ms": 1000}]
     view = snapshot(settings, now=1793411985, strata=strata, last_prefill={"value": 131, "at": 1793142000})
@@ -386,7 +386,7 @@ def test_large_memory_capacity_and_unit_remain_complete(settings, drawing_font, 
         strata["hardware"][prefix + "_total"] = total * 2**30
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
     for label, left in (("VRAM", 240), ("RAM", 398)):
-        cells = [value for (x, y), value in texts if x == left + 10 and 186 < y < 261]
+        cells = [value for (x, y), value in texts if x == left + 10 and 182 < y < 267]
         assert (f"{used}/{total}GB" in cells or
                 label + " GB" in cells and (f"{used}/{total}" in cells or
                                            str(used) in cells and "/" + str(total) in cells))
@@ -401,3 +401,31 @@ def test_power_chart_clears_card_border(settings, drawing_font, strata, monkeypa
     monkeypatch.setattr(Canvas, "spark", spark)
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
     assert charts and all(y + height <= 329 for y, height in charts)
+
+
+def test_two_line_memory_keeps_readable_baseline_spacing(settings, drawing_font, monkeypatch):
+    from paperhub.render import memory_metric
+    rows = []
+    original = Canvas.text
+    def text(self, x, y, value, size=22, **kwargs):
+        rows.append((y, size, str(value)))
+        return original(self, x, y, value, size=size, **kwargs)
+    monkeypatch.setattr(Canvas, "text", text)
+    memory_metric(Canvas(settings), (398, 182, 540, 267), "RAM", "12345.6 / 65536 GB")
+    assert [value for _, _, value in rows] == ["RAM GB", "12345.6", "/65536"]
+    assert all(b[0] - a[0] >= max(a[1], b[1]) * 1.3 for a, b in zip(rows, rows[1:]))
+    assert rows[-1][0] <= 260
+
+
+def test_memory_icons_are_consistent_for_mixed_capacities(settings, drawing_font, strata, monkeypatch):
+    import paperhub.render as renderer
+    kinds = []
+    original = renderer.memory_metric
+    def memory(canvas, box, label, value, **kwargs):
+        kinds.append(kwargs["kind"])
+        return original(canvas, box, label, value, **kwargs)
+    monkeypatch.setattr(renderer, "memory_metric", memory)
+    strata["hardware"]["ram_used"] = 900.2 * 2**30
+    strata["hardware"]["ram_total"] = 1024 * 2**30
+    render_png(snapshot(settings, now=1793411985, strata=strata), settings)
+    assert kinds == [None, None]

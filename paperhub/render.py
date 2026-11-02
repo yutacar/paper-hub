@@ -170,12 +170,12 @@ def metric(c, box, label, value, *, kind=None, size=24):
     c.text(x + 10, bottom - 12, value, size=size, bold=True, width=right - x - 20)
 
 
-def memory_metric(c, box, label, value):
+def memory_metric(c, box, label, value, *, kind="chip"):
     """Keep capacity and unit intact by moving GB into the heading if needed."""
     compact = value.replace(" / ", "/").replace(" GB", "GB")
     width = box[2] - box[0] - 20
     if c.draw.textlength(compact, font=c.font(22, True)) <= width:
-        metric(c, box, label, compact, kind="chip", size=22)
+        metric(c, box, label, compact, kind=kind, size=22)
         return
     capacity = compact.removesuffix("GB")
     if c.draw.textlength(capacity, font=c.font(22, True)) <= width:
@@ -186,8 +186,8 @@ def memory_metric(c, box, label, value):
     x, y, right, bottom = box
     c.text(x + 10, y + 20, label + " GB", bold=True)
     used, total = capacity.split("/", 1)
-    c.text(x + 10, y + 44, used, bold=True)
-    c.text(x + 10, bottom - 6, "/" + total, bold=True)
+    c.text(x + 10, y + 49, used, bold=True)
+    c.text(x + 10, y + 78, "/" + total, bold=True)
 
 
 def metadata(c, view, source, right, y, width, failure_y=None):
@@ -235,10 +235,16 @@ def draw_strata(c, view):
         prefill += " t/s"
         if s.get("prefill_cached"):
             prefill += "（" + s["prefill_date"] + "）"
-    metric(c, (12, 186, 232, 261), "Prefill", prefill, kind="layers",
+    metric(c, (12, 182, 232, 267), "Prefill", prefill, kind="layers",
            size=22 if s.get("prefill_cached") else 24)
-    memory_metric(c, (240, 186, 390, 261), "VRAM", s["vram"])
-    memory_metric(c, (398, 186, 540, 261), "RAM", s["ram"])
+    memories = (((240, 182, 390, 267), "VRAM", s["vram"]),
+                ((398, 182, 540, 267), "RAM", s["ram"]))
+    # Keep both headings consistent when either card needs GB in its heading.
+    show_chips = all(c.draw.textlength(value.replace(" / ", "/").replace(" GB", "GB"),
+                                     font=c.font(22, True)) <= box[2] - box[0] - 20
+                     for box, _, value in memories)
+    for box, label, value in memories:
+        memory_metric(c, box, label, value, kind="chip" if show_chips else None)
     metric(c, (12, 269, 128, 331), "GPU", s["gpu_util"] + "%", size=26)
     metric(c, (136, 269, 252, 331), "温度", s["gpu_temp"] + "°C", size=26)
     panel(c, (260, 269, 540, 331))
