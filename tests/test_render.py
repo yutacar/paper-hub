@@ -351,5 +351,5 @@ def test_provider_icons_plan_free_headings_and_top_update(settings, drawing_font
     assert icons == ["claude-code", "codex", "antigravity"]
     assert not any("(pro)" in value or "(plus)" in value for value in texts)
     assert updates == [(535, 38), (940, 38)]
-    assert image.getpixel((800, 110)) == 238  # Flat gray heading background.
+    assert image.getpixel((800, 110)) == 85  # Same dark background as request heading.
     assert image.getpixel((635, 165)) == 119  # Gray usage fill, distinct from text.

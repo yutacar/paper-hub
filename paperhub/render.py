@@ -147,18 +147,18 @@ def provider_icon(c, provider_id, x, y):
         for i in range(8):
             angle = i * math.pi / 8
             dx, dy = 11 * math.cos(angle), 11 * math.sin(angle)
-            d.line((x + 12 - dx, y + 12 - dy, x + 12 + dx, y + 12 + dy), fill=68, width=2)
+            d.line((x + 12 - dx, y + 12 - dy, x + 12 + dx, y + 12 + dy), fill=255, width=2)
     elif provider_id == "codex":
         for i in range(6):
             angle = i * math.pi / 3
             cx, cy = x + 12 + 6 * math.cos(angle), y + 12 + 6 * math.sin(angle)
-            d.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), outline=68, width=2)
+            d.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), outline=255, width=2)
     elif provider_id == "antigravity":
         d.polygon([(x + 12, y), (x + 16, y + 8), (x + 24, y + 12),
                    (x + 16, y + 16), (x + 12, y + 24), (x + 8, y + 16),
-                   (x, y + 12), (x + 8, y + 8)], fill=221, outline=68, width=2)
+                   (x, y + 12), (x + 8, y + 8)], fill=85, outline=255, width=2)
     else:
-        d.ellipse((x + 2, y + 2, x + 22, y + 22), outline=68, width=2)
+        d.ellipse((x + 2, y + 2, x + 22, y + 22), outline=255, width=2)
 
 
 
@@ -258,9 +258,9 @@ def draw_usage(c, view):
             if y + needed - 33 > 402:
                 omitted += 1
                 continue
-            c.draw.rounded_rectangle((571, y - 25, 939, y + 6), radius=5, fill=238)
+            c.draw.rounded_rectangle((571, y - 25, 939, y + 6), radius=5, fill=85)
             provider_icon(c, provider["id"], 578, y - 22)
-            c.text(612, y, group["display_heading"], bold=True, width=320)
+            c.text(612, y, group["display_heading"], bold=True, width=320, fill=255)
             y += 34
             for window in group["windows"]:
                 inverted = window["inverted"]
