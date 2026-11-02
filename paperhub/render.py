@@ -170,15 +170,22 @@ def metric(c, box, label, value, *, kind=None, size=24):
     c.text(x + 10, bottom - 12, value, size=size, bold=True, width=right - x - 20)
 
 
+def compact_memory(value):
+    return value.replace(" / ", "/").replace(" GB", "GB")
+
+
+def fits_memory(c, box, text):
+    return c.draw.textlength(text, font=c.font(22, True)) <= box[2] - box[0] - 20
+
+
 def memory_metric(c, box, label, value, *, kind="chip"):
     """Keep capacity and unit intact by moving GB into the heading if needed."""
-    compact = value.replace(" / ", "/").replace(" GB", "GB")
-    width = box[2] - box[0] - 20
-    if c.draw.textlength(compact, font=c.font(22, True)) <= width:
+    compact = compact_memory(value)
+    if fits_memory(c, box, compact):
         metric(c, box, label, compact, kind=kind, size=22)
         return
     capacity = compact.removesuffix("GB")
-    if c.draw.textlength(capacity, font=c.font(22, True)) <= width:
+    if fits_memory(c, box, capacity):
         metric(c, box, label + " GB", capacity, size=22)
         return
     # Very large capacities use two rows at the same minimum font size.
@@ -235,31 +242,29 @@ def draw_strata(c, view):
         prefill += " t/s"
         if s.get("prefill_cached"):
             prefill += "（" + s["prefill_date"] + "）"
-    metric(c, (12, 182, 232, 267), "Prefill", prefill, kind="layers",
+    metric(c, (12, 186, 232, 271), "Prefill", prefill, kind="layers",
            size=22 if s.get("prefill_cached") else 24)
-    memories = (((240, 182, 390, 267), "VRAM", s["vram"]),
-                ((398, 182, 540, 267), "RAM", s["ram"]))
+    memories = (((240, 186, 390, 271), "VRAM", s["vram"]),
+                ((398, 186, 540, 271), "RAM", s["ram"]))
     # Keep both headings consistent when either card needs GB in its heading.
-    show_chips = all(c.draw.textlength(value.replace(" / ", "/").replace(" GB", "GB"),
-                                     font=c.font(22, True)) <= box[2] - box[0] - 20
-                     for box, _, value in memories)
+    show_chips = all(fits_memory(c, box, compact_memory(value)) for box, _, value in memories)
     for box, label, value in memories:
         memory_metric(c, box, label, value, kind="chip" if show_chips else None)
-    metric(c, (12, 269, 128, 331), "GPU", s["gpu_util"] + "%", size=26)
-    metric(c, (136, 269, 252, 331), "温度", s["gpu_temp"] + "°C", size=26)
-    panel(c, (260, 269, 540, 331))
-    c.text(270, 291, "電力", bold=True)
-    c.right(528, 291, s["power"], width=198)
-    c.spark(270, 297, [row.get("gpu_power") for row in view["history"]], width=140, height=32)
-    c.draw.line((420, 300, 420, 327), fill=102, width=2)
-    c.text(430, 328, "Ctx " + s["context"].split(" ", 1)[0], width=100)
+    metric(c, (12, 279, 128, 341), "GPU", s["gpu_util"] + "%", size=26)
+    metric(c, (136, 279, 252, 341), "温度", s["gpu_temp"] + "°C", size=26)
+    panel(c, (260, 279, 540, 341))
+    c.text(270, 301, "電力", bold=True)
+    c.right(528, 301, s["power"], width=198)
+    c.spark(270, 307, [row.get("gpu_power") for row in view["history"]], width=140, height=32)
+    c.draw.line((420, 310, 420, 337), fill=102, width=2)
+    c.text(430, 338, "Ctx " + s["context"].split(" ", 1)[0], width=100)
 
-    panel(c, (12, 339, 540, 465))
-    c.draw.rounded_rectangle((13, 340, 217, 369), radius=8, fill=85)
-    c.text(24, 364, "直近リクエスト", bold=True, fill=255)
-    c.right(528, 364, "experts " + s["experts_cached"], width=285)
+    panel(c, (12, 349, 540, 475))
+    c.draw.rounded_rectangle((13, 350, 217, 379), radius=8, fill=85)
+    c.text(24, 374, "直近リクエスト", bold=True, fill=255)
+    c.right(528, 374, "experts " + s["experts_cached"], width=285)
     for i, request in enumerate(s["recent_requests"][:3]):
-        y = 394 + i * 33
+        y = 404 + i * 33
         c.text(24, y, request["time"][-5:], width=64)
         c.text(98, y, request["status"], width=88)
         c.right(340, y, request["tokens"].replace(" → ", "→"), width=144)
@@ -319,21 +324,21 @@ def draw_usage(c, view):
 
 
 def draw_footer(c, view):
-    panel(c, (5, 473, 954, 534), fill=255)
+    panel(c, (5, 483, 954, 538), fill=255)
     s = view["strata"]
-    icon(c, "layers", 20, 490)
-    c.text(54, 511, "キャッシュ再利用率", bold=True, width=215)
-    c.draw.line((269, 482, 269, 526), fill=102, width=2)
+    icon(c, "layers", 20, 495)
+    c.text(54, 516, "キャッシュ再利用率", bold=True, width=215)
+    c.draw.line((269, 487, 269, 531), fill=102, width=2)
     value = s["cache_reuse"] if s else "—"
-    c.text(282, 519, value, size=40, bold=True, width=120)
+    c.text(282, 524, value, size=40, bold=True, width=120)
     ratio = number(s.get("cache_reuse_ratio")) if s else None
     percent = ratio * 100 if ratio is not None else None
-    c.draw.ellipse((411, 483, 453, 525), outline=102, width=2)
+    c.draw.ellipse((411, 488, 453, 530), outline=102, width=2)
     if percent is not None:
-        c.draw.arc((411, 483, 453, 525), start=-90, end=-90 + max(0, min(100, percent)) * 3.6, fill=85, width=8)
-    c.draw.line((468, 482, 468, 526), fill=102, width=2)
-    c.text(482, 497, "最終リクエスト", width=210)
-    c.text(482, 525, s["last_request"] if s else "—", size=24, width=210)
+        c.draw.arc((411, 488, 453, 530), start=-90, end=-90 + max(0, min(100, percent)) * 3.6, fill=85, width=8)
+    c.draw.line((468, 487, 468, 531), fill=102, width=2)
+    c.text(482, 506, "最終リクエスト", width=210)
+    c.text(482, 532, s["last_request"] if s else "—", size=24, width=210)
     telemetry = view["telemetry"]
     parts = []
     if number(telemetry.get("bat")) is not None:
@@ -341,13 +346,13 @@ def draw_footer(c, view):
     if number(telemetry.get("rssi")) is not None:
         parts.append(f"{telemetry['rssi']}dBm")
     if parts:
-        c.draw.line((700, 482, 700, 526), fill=102, width=2)
-        c.text(714, 513, "  ".join(parts), width=230)
+        c.draw.line((700, 487, 700, 531), fill=102, width=2)
+        c.text(714, 518, "  ".join(parts), width=230)
 
 
 def render_png(view, settings):
     c = Canvas(settings)
-    panel(c, (5, 5, 547, 467), fill=238)
+    panel(c, (5, 5, 547, 477), fill=238)
     panel(c, (557, 5, 954, 461), fill=238)
     draw_strata(c, view)
     draw_usage(c, view)

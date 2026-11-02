@@ -27,7 +27,7 @@ def test_png_format_and_levels(settings, drawing_font, strata, usage):
     assert set(image.tobytes()) <= set(range(0, 256, 17))
     assert 0 not in image.tobytes()
     assert image.getpixel((547, 300)) == 102
-    assert image.getpixel((100, 473)) == 102
+    assert image.getpixel((100, 483)) == 102
 
 
 def test_no_data_and_offline(settings, drawing_font, strata):
@@ -156,7 +156,7 @@ def test_fixed_request_columns_and_single_summary(settings, drawing_font, strata
     cells, summaries = [], []
     original, text_original = Canvas.right, Canvas.text
     def right(self, x, y, value, **kwargs):
-        if y in (394, 427, 460):
+        if y in (404, 437, 470):
             cells.append((x, y, value))
         return original(self, x, y, value, **kwargs)
     def text(self, x, y, value, **kwargs):
@@ -168,7 +168,7 @@ def test_fixed_request_columns_and_single_summary(settings, drawing_font, strata
     render_png(snapshot(settings, now=1793411985, strata=strata, usage=usage), settings)
     assert len(summaries) == 1
     assert "\n" not in summaries[0][2]
-    for y in (394, 427, 460):
+    for y in (404, 437, 470):
         assert [x for x, baseline, _ in cells if baseline == y] == [340, 449, 528]
     c = Canvas(settings)
     end = c.right(318, 50, "65→182", width=134)
@@ -181,7 +181,7 @@ def test_footer_only_received_values(settings, drawing_font, telemetry, expected
     values = []
     original = Canvas.text
     def record(self, x, y, value, **kwargs):
-        if x == 714 and y == 513:
+        if x == 714 and y == 518:
             values.append(value)
         return original(self, x, y, value, **kwargs)
     monkeypatch.setattr(Canvas, "text", record)
@@ -197,11 +197,11 @@ def test_prefill_cached_date_and_small_missing(settings, drawing_font, strata, m
         return original(self, x, y, value, size=size, **kwargs)
     monkeypatch.setattr(Canvas, "text", record)
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
-    assert ("—", 255, 24) in calls
+    assert ("—", 259, 24) in calls
     calls.clear()
     render_png(snapshot(settings, now=1793411985, strata=strata,
                         last_prefill={"value": 131, "at": 1793142000}), settings)
-    assert ("131 t/s（10/28）", 255, 22) in calls
+    assert ("131 t/s（10/28）", 259, 22) in calls
     # A current qualifying request overrides the stored fallback.
     strata["requests"] = [{"prompt_tokens": 1000, "reused": 0, "prompt_ms": 1000}]
     view = snapshot(settings, now=1793411985, strata=strata, last_prefill={"value": 131, "at": 1793142000})
@@ -386,7 +386,7 @@ def test_large_memory_capacity_and_unit_remain_complete(settings, drawing_font, 
         strata["hardware"][prefix + "_total"] = total * 2**30
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
     for label, left in (("VRAM", 240), ("RAM", 398)):
-        cells = [value for (x, y), value in texts if x == left + 10 and 182 < y < 267]
+        cells = [value for (x, y), value in texts if x == left + 10 and 186 < y < 271]
         assert (f"{used}/{total}GB" in cells or
                 label + " GB" in cells and (f"{used}/{total}" in cells or
                                            str(used) in cells and "/" + str(total) in cells))
@@ -400,7 +400,7 @@ def test_power_chart_clears_card_border(settings, drawing_font, strata, monkeypa
         return original(self, x, y, samples, width=width, height=height)
     monkeypatch.setattr(Canvas, "spark", spark)
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
-    assert charts and all(y + height <= 329 for y, height in charts)
+    assert charts and all(y + height <= 339 for y, height in charts)
 
 
 def test_two_line_memory_keeps_readable_baseline_spacing(settings, drawing_font, monkeypatch):
@@ -411,10 +411,10 @@ def test_two_line_memory_keeps_readable_baseline_spacing(settings, drawing_font,
         rows.append((y, size, str(value)))
         return original(self, x, y, value, size=size, **kwargs)
     monkeypatch.setattr(Canvas, "text", text)
-    memory_metric(Canvas(settings), (398, 182, 540, 267), "RAM", "12345.6 / 65536 GB")
+    memory_metric(Canvas(settings), (398, 186, 540, 271), "RAM", "12345.6 / 65536 GB")
     assert [value for _, _, value in rows] == ["RAM GB", "12345.6", "/65536"]
     assert all(b[0] - a[0] >= max(a[1], b[1]) * 1.3 for a, b in zip(rows, rows[1:]))
-    assert rows[-1][0] <= 260
+    assert rows[-1][0] <= 264
 
 
 def test_memory_icons_are_consistent_for_mixed_capacities(settings, drawing_font, strata, monkeypatch):
@@ -429,3 +429,18 @@ def test_memory_icons_are_consistent_for_mixed_capacities(settings, drawing_font
     strata["hardware"]["ram_total"] = 1024 * 2**30
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
     assert kinds == [None, None]
+
+
+def test_card_rows_keep_eight_pixel_gaps(settings, drawing_font, strata, monkeypatch):
+    import paperhub.render as renderer
+    boxes = []
+    original = renderer.panel
+    def panel(canvas, box, **kwargs):
+        boxes.append(box)
+        return original(canvas, box, **kwargs)
+    monkeypatch.setattr(renderer, "panel", panel)
+    render_png(snapshot(settings, now=1793411985, strata=strata), settings)
+    rows = [(12, 78, 540, 178), (12, 186, 232, 271),
+            (12, 279, 128, 341), (12, 349, 540, 475), (5, 483, 954, 538)]
+    assert all(box in boxes for box in rows)
+    assert all(b[1] - a[3] == 8 for a, b in zip(rows, rows[1:]))
