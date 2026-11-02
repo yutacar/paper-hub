@@ -163,7 +163,7 @@ def provider_icon(c, provider_id, x, y):
 
 
 def metric(c, box, label, value, *, kind=None, size=24):
-    panel(c, box, fill=238)
+    panel(c, box, fill=255)
     x, y, right, bottom = box
     if kind:
         icon(c, kind, x + 10, y + 9)
@@ -292,6 +292,8 @@ def draw_usage(c, view):
 
 def draw_footer(c, view):
     panel(c, (5, 473, 954, 534), fill=238)
+    c.draw.rounded_rectangle((7, 475, 467, 532), radius=8, fill=255)
+    c.draw.rectangle((20, 475, 467, 532), fill=255)
     s = view["strata"]
     icon(c, "layers", 20, 490)
     c.text(54, 511, "キャッシュ再利用率", bold=True, width=215)
