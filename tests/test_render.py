@@ -197,11 +197,11 @@ def test_prefill_cached_date_and_small_missing(settings, drawing_font, strata, m
         return original(self, x, y, value, size=size, **kwargs)
     monkeypatch.setattr(Canvas, "text", record)
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
-    assert ("—", 239, 24) in calls
+    assert ("—", 232, 24) in calls
     calls.clear()
     render_png(snapshot(settings, now=1793411985, strata=strata,
                         last_prefill={"value": 131, "at": 1793142000}), settings)
-    assert ("131 t/s（10/28）", 239, 22) in calls
+    assert ("131 t/s（10/28）", 232, 22) in calls
     # A current qualifying request overrides the stored fallback.
     strata["requests"] = [{"prompt_tokens": 1000, "reused": 0, "prompt_ms": 1000}]
     view = snapshot(settings, now=1793411985, strata=strata, last_prefill={"value": 131, "at": 1793142000})
@@ -473,3 +473,27 @@ def test_outer_frames_and_footer_clearance(settings, drawing_font, strata, monke
         _, top, _, bottom = Canvas(settings).font(size).getbbox("3時間前", anchor="ls")
         assert baseline + top >= footer[1] + 4
         assert baseline + bottom <= footer[3] - 3
+
+
+def test_panel_tops_and_header_metric_spacing(settings, drawing_font, strata, monkeypatch):
+    import paperhub.render as renderer
+    boxes, texts = [], []
+    original_panel, original_text = renderer.panel, Canvas.text
+    def panel(canvas, box, **kwargs):
+        boxes.append(box)
+        return original_panel(canvas, box, **kwargs)
+    def text(self, x, y, value, size=22, **kwargs):
+        texts.append((x, y, str(value), size))
+        return original_text(self, x, y, value, size=size, **kwargs)
+    monkeypatch.setattr(renderer, "panel", panel)
+    monkeypatch.setattr(Canvas, "text", text)
+    strata["live"]["state"] = "generating"
+    render_png(snapshot(settings, now=1793411985, strata=strata), settings)
+    assert (12, 72, 540, 158) in boxes
+    assert (564, 72, 946, 453) in boxes
+    assert next(y for _, y, value, _ in texts if value == "● Generating") == 64
+    assert next(y for x, y, value, _ in texts if x == 20 and strata["engine"]["model"] in value) == 64
+    label = next(y for _, y, value, _ in texts if value == "Prefill")
+    assert label == 196
+    assert any(y == 232 and value == "—" for _, y, value, _ in texts)
+    assert 24 * 1.3 <= 232 - label <= 38

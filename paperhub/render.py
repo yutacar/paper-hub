@@ -161,13 +161,13 @@ def provider_icon(c, provider_id, x, y):
         d.ellipse((x + 2, y + 2, x + 22, y + 22), outline=255, width=2)
 
 
-def metric(c, box, label, value, *, kind=None, size=24):
+def metric(c, box, label, value, *, kind=None, size=24, centered=False):
     panel(c, box, fill=255)
     x, y, right, bottom = box
     if kind:
-        icon(c, kind, x + 10, y + 9)
-    c.text(x + (42 if kind else 10), y + 23, label, bold=True, width=right - x - (52 if kind else 20))
-    c.text(x + 10, bottom - 12, value, size=size, bold=True, width=right - x - 20)
+        icon(c, kind, x + 10, y + (12 if centered else 9))
+    c.text(x + (42 if kind else 10), y + (30 if centered else 23), label, bold=True, width=right - x - (52 if kind else 20))
+    c.text(x + 10, y + 66 if centered else bottom - 12, value, size=size, bold=True, width=right - x - 20)
 
 
 def compact_memory(value):
@@ -182,11 +182,11 @@ def memory_metric(c, box, label, value, *, kind="chip"):
     """Keep capacity and unit intact by moving GB into the heading if needed."""
     compact = compact_memory(value)
     if fits_memory(c, box, compact):
-        metric(c, box, label, compact, kind=kind, size=22)
+        metric(c, box, label, compact, kind=kind, size=22, centered=True)
         return
     capacity = compact.removesuffix("GB")
     if fits_memory(c, box, capacity):
-        metric(c, box, label + " GB", capacity, size=22)
+        metric(c, box, label + " GB", capacity, size=22, centered=True)
         return
     # Very large capacities use two rows at the same minimum font size.
     panel(c, box)
@@ -214,7 +214,7 @@ def draw_strata(c, view):
     if s:
         state = "● " + s["state"]
         state_width = min(250, c.draw.textlength(state, font=c.font(24)))
-        c.right(535, 61, state, size=24, width=250)
+        c.right(535, 64, state, size=24, width=250)
     metadata(c, view, "strata", 535, 38, 330)
     if view["status"]["strata"]:
         c.text(24, 121, view["status"]["strata"], width=500)
@@ -224,7 +224,7 @@ def draw_strata(c, view):
     model = s["model"]
     if s["state"].lower() not in ("idle", "—"):
         model = s["phase"] + " " + s["live_tok_s"] + " t/s · " + model
-    c.text(20, 61, model, width=535 - state_width - 32)
+    c.text(20, 64, model, width=535 - state_width - 32)
     panel(c, (12, 72, 540, 158))
     icon(c, "chip", 24, 78)
     c.text(58, 99, "Decode", size=24, bold=True)
@@ -243,7 +243,7 @@ def draw_strata(c, view):
         if s.get("prefill_cached"):
             prefill += "（" + s["prefill_date"] + "）"
     metric(c, (12, 166, 232, 251), "Prefill", prefill, kind="layers",
-           size=22 if s.get("prefill_cached") else 24)
+           size=22 if s.get("prefill_cached") else 24, centered=True)
     memories = (((240, 166, 390, 251), "VRAM", s["vram"]),
                 ((398, 166, 540, 251), "RAM", s["ram"]))
     # Keep both headings consistent when either card needs GB in its heading.
@@ -279,7 +279,7 @@ def draw_usage(c, view):
     icon(c, "bars", 568, 17)
     c.text(604, 39, "AI利用量", size=30, bold=True)
     metadata(c, view, "xangi", 940, 38, 200, failure_y=65)
-    panel(c, (564, 78, 946, 453))
+    panel(c, (564, 72, 946, 453))
     u = view["usage"]
     if u is None:
         c.text(578, 118, "データなし", size=26)
