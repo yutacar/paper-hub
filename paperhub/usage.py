@@ -81,6 +81,7 @@ def format_usage(payload, *, now, tz, order="", hide=""):
             heading = label + (" (古)" if stale else "")
             if group_label != label:
                 heading += " " + group_label
+            display_heading = heading
             heading += f" ({plan})" if plan else ""
             rows = []
             for window in windows:
@@ -94,7 +95,7 @@ def format_usage(payload, *, now, tz, order="", hide=""):
                              "pace_percent": pace,
                              "reset": reset_label(window, now, tz=tz),
                              "inverted": used is not None and pace is not None and used > pace})
-            groups.append({"id": group.get("id"), "heading": heading, "windows": rows})
+            groups.append({"id": group.get("id"), "heading": heading, "display_heading": display_heading, "windows": rows})
         if provider_zero:
             zero_providers.append({"id": provider.get("id"), "label": label, "groups": provider_zero})
         if groups:

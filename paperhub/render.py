@@ -3,6 +3,7 @@
 import argparse
 import io
 import json
+import math
 import time
 from functools import lru_cache
 from pathlib import Path
@@ -25,7 +26,7 @@ class Canvas:
     def font(self, size, bold=False):
         return ImageFont.truetype(self.settings.font_path_bold if bold else self.settings.font_path, size)
 
-    def text(self, x, y, value, size=22, width=None, fill=0, bold=False):
+    def text(self, x, y, value, size=22, width=None, fill=34, bold=False):
         value = str(value)
         font = self.font(size, bold)
         if width is not None and self.draw.textlength(value, font=font) > width:
@@ -59,7 +60,7 @@ class Canvas:
         values = [number(value) for value in samples[-10:]]
         values = [None] * (10 - len(values)) + values
         maximum = max((value for value in values if value is not None and value > 0), default=0)
-        self.draw.line((x, y + height - 2, x + width - 1, y + height - 2), fill=0, width=2)
+        self.draw.line((x, y + height - 2, x + width - 1, y + height - 2), fill=85, width=2)
         if maximum <= 0:
             return
         for index, value in enumerate(values):
@@ -68,7 +69,7 @@ class Canvas:
             bar_height = max(1, round(value / maximum * (height - 2)))
             left = x + index * width // 10 + 2
             right = x + (index + 1) * width // 10 - 3
-            self.draw.rectangle((left, y + height - 2 - bar_height, right, y + height - 3), fill=0)
+            self.draw.rectangle((left, y + height - 2 - bar_height, right, y + height - 3), fill=85)
 
     def spark(self, x, y, samples, width=140, height=32):
         values = [number(v) for v in samples]
@@ -80,16 +81,16 @@ class Canvas:
         for i, value in enumerate(values):
             if value is None:
                 if len(points) > 1:
-                    self.draw.line(points, fill=0, width=2)
+                    self.draw.line(points, fill=85, width=2)
                 points = []
                 continue
             py = y + height - 2 if high == low else y + height - 2 - (value - low) / (high - low) * (height - 4)
             points.append((x + i * (width - 1) / max(1, len(values) - 1), py))
         if len(points) > 1:
-            self.draw.line(points, fill=0, width=2)
+            self.draw.line(points, fill=85, width=2)
         elif points:
             px, py = points[0]
-            self.draw.line((px, py, px + width - 1, py), fill=0, width=2)
+            self.draw.line((px, py, px + width - 1, py), fill=85, width=2)
 
 
 def spark_summary(samples):
@@ -115,8 +116,8 @@ def zero_summary(providers, measure, width=432):
     return text + "…"
 
 
-def panel(c, box, radius=10):
-    c.draw.rounded_rectangle(box, radius=radius, outline=0, width=2)
+def panel(c, box, radius=10, fill=255):
+    c.draw.rounded_rectangle(box, radius=radius, outline=102, fill=fill, width=2)
 
 
 def icon(c, kind, x, y, size=24):
@@ -126,22 +127,43 @@ def icon(c, kind, x, y, size=24):
         for offset in (12, 6, 0):
             d.line([(x, y + 6 + offset), (x + size / 2, y + offset),
                     (x + size, y + 6 + offset), (x + size / 2, y + 12 + offset),
-                    (x, y + 6 + offset)], fill=0, width=2)
+                    (x, y + 6 + offset)], fill=51, width=2)
     elif kind == "bars":
         for i in range(3):
-            d.rectangle((x + i * 8, y + 18 - i * 7, x + i * 8 + 5, y + 24), fill=0)
+            d.rectangle((x + i * 8, y + 18 - i * 7, x + i * 8 + 5, y + 24), fill=51)
     elif kind == "chip":
-        d.rectangle((x + 4, y + 4, x + 20, y + 20), outline=0, width=2)
+        d.rectangle((x + 4, y + 4, x + 20, y + 20), outline=51, width=2)
         for offset in (7, 12, 17):
             for line in ((x, y + offset, x + 4, y + offset),
                          (x + 20, y + offset, x + 24, y + offset),
                          (x + offset, y, x + offset, y + 4),
                          (x + offset, y + 20, x + offset, y + 24)):
-                d.line(line, fill=0, width=2)
+                d.line(line, fill=51, width=2)
+
+def provider_icon(c, provider_id, x, y):
+    """Small geometric provider marks, drawn directly at display resolution."""
+    d = c.draw
+    if provider_id == "claude-code":
+        for i in range(8):
+            angle = i * math.pi / 8
+            dx, dy = 11 * math.cos(angle), 11 * math.sin(angle)
+            d.line((x + 12 - dx, y + 12 - dy, x + 12 + dx, y + 12 + dy), fill=68, width=2)
+    elif provider_id == "codex":
+        for i in range(6):
+            angle = i * math.pi / 3
+            cx, cy = x + 12 + 6 * math.cos(angle), y + 12 + 6 * math.sin(angle)
+            d.ellipse((cx - 5, cy - 5, cx + 5, cy + 5), outline=68, width=2)
+    elif provider_id == "antigravity":
+        d.polygon([(x + 12, y), (x + 16, y + 8), (x + 24, y + 12),
+                   (x + 16, y + 16), (x + 12, y + 24), (x + 8, y + 16),
+                   (x, y + 12), (x + 8, y + 8)], fill=221, outline=68, width=2)
+    else:
+        d.ellipse((x + 2, y + 2, x + 22, y + 22), outline=68, width=2)
+
 
 
 def metric(c, box, label, value, *, kind=None, size=24):
-    panel(c, box)
+    panel(c, box, fill=238)
     x, y, right, bottom = box
     if kind:
         icon(c, kind, x + 10, y + 9)
@@ -149,11 +171,13 @@ def metric(c, box, label, value, *, kind=None, size=24):
     c.text(x + 10, bottom - 12, value, size=size, bold=True, width=right - x - 20)
 
 
-def metadata(c, view, source, right, y, width):
+def metadata(c, view, source, right, y, width, failure_y=None):
     updated = view["success_labels"].get(source, "—")
     failure = view["failures"].get(source)
-    text = updated + (" " + failure if failure else " 更新")
-    c.right(right, y, text, width=width)
+    text = updated + (" " + failure if failure and failure_y is None else " 更新")
+    c.right(right, y, text, width=width, fill=85)
+    if failure and failure_y is not None:
+        c.right(right, failure_y, updated + " " + failure, width=366, fill=85)
 
 
 def draw_strata(c, view):
@@ -203,7 +227,7 @@ def draw_strata(c, view):
     c.text(430, 328, "Ctx " + s["context"].split(" ", 1)[0], width=100)
 
     panel(c, (12, 339, 540, 465))
-    c.draw.rounded_rectangle((13, 340, 217, 369), radius=8, fill=0)
+    c.draw.rounded_rectangle((13, 340, 217, 369), radius=8, fill=85)
     c.text(24, 364, "直近リクエスト", bold=True, fill=255)
     c.right(528, 364, "experts " + s["experts_cached"], width=285)
     for i, request in enumerate(s["recent_requests"][:3]):
@@ -221,7 +245,7 @@ def draw_strata(c, view):
 def draw_usage(c, view):
     icon(c, "bars", 568, 17)
     c.text(604, 39, "AI利用量", size=30, bold=True)
-    metadata(c, view, "xangi", 940, 65, 366)
+    metadata(c, view, "xangi", 940, 38, 200, failure_y=65)
     panel(c, (564, 78, 946, 453))
     u = view["usage"]
     if u is None:
@@ -234,20 +258,22 @@ def draw_usage(c, view):
             if y + needed - 33 > 402:
                 omitted += 1
                 continue
-            c.text(578, y, group["heading"], bold=True, width=354)
+            c.draw.rounded_rectangle((571, y - 25, 939, y + 6), radius=5, fill=238)
+            provider_icon(c, provider["id"], 578, y - 22)
+            c.text(612, y, group["display_heading"], bold=True, width=320)
             y += 34
             for window in group["windows"]:
                 inverted = window["inverted"]
-                fg = 255 if inverted else 0
+                fg = 255 if inverted else 34
                 if inverted:
-                    c.draw.rectangle((570, y - 26, 940, y + 5), fill=0)
+                    c.draw.rectangle((570, y - 26, 940, y + 5), fill=85)
                 c.text(578, y, window["label"], fill=fg, width=34)
                 x, by, width = 615, y - 17, 110
                 c.draw.rectangle((x, by, x + width, by + 14), outline=fg, width=2)
                 if window["used_percent"] is not None:
                     filled = int((width - 4) * min(100, max(0, window["used_percent"])) / 100)
                     if filled:
-                        c.draw.rectangle((x + 2, by + 2, x + 1 + filled, by + 12), fill=fg)
+                        c.draw.rectangle((x + 2, by + 2, x + 1 + filled, by + 12), fill=187 if inverted else 119)
                 if window["pace_percent"] is not None:
                     px = x + int(width * window["pace_percent"] / 100)
                     c.draw.line((px, by - 3, px, by + 17), fill=fg, width=3)
@@ -265,7 +291,7 @@ def draw_usage(c, view):
 
 
 def draw_footer(c, view):
-    panel(c, (5, 473, 954, 534))
+    panel(c, (5, 473, 954, 534), fill=238)
     s = view["strata"]
     icon(c, "layers", 20, 490)
     c.text(54, 511, "キャッシュ再利用率", bold=True, width=215)
@@ -274,9 +300,9 @@ def draw_footer(c, view):
     c.text(282, 519, value, size=40, bold=True, width=120)
     ratio = number(s.get("cache_reuse_ratio")) if s else None
     percent = ratio * 100 if ratio is not None else None
-    c.draw.ellipse((411, 483, 453, 525), outline=0, width=2)
+    c.draw.ellipse((411, 483, 453, 525), outline=102, width=2)
     if percent is not None:
-        c.draw.arc((411, 483, 453, 525), start=-90, end=-90 + max(0, min(100, percent)) * 3.6, fill=0, width=8)
+        c.draw.arc((411, 483, 453, 525), start=-90, end=-90 + max(0, min(100, percent)) * 3.6, fill=85, width=8)
     c.draw.line((468, 482, 468, 526), fill=0, width=2)
     c.text(482, 497, "最終リクエスト", width=210)
     c.text(482, 525, s["last_request"] if s else "—", size=24, width=210)
@@ -293,8 +319,8 @@ def draw_footer(c, view):
 
 def render_png(view, settings):
     c = Canvas(settings)
-    panel(c, (5, 5, 547, 467))
-    panel(c, (557, 5, 954, 461))
+    panel(c, (5, 5, 547, 467), fill=238)
+    panel(c, (557, 5, 954, 461), fill=238)
     draw_strata(c, view)
     draw_usage(c, view)
     draw_footer(c, view)

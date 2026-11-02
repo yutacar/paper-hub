@@ -25,8 +25,8 @@ def test_png_format_and_levels(settings, drawing_font, strata, usage):
     assert image.size == (960, 540)
     assert image.mode == "L"
     assert set(image.tobytes()) <= set(range(0, 256, 17))
-    assert image.getpixel((547, 300)) == 0
-    assert image.getpixel((100, 473)) == 0
+    assert image.getpixel((547, 300)) == 102
+    assert image.getpixel((100, 473)) == 102
 
 
 def test_no_data_and_offline(settings, drawing_font, strata):
@@ -72,14 +72,14 @@ def test_spark_zero_line_and_usage_inversion(settings, drawing_font, strata, usa
     assert rows[-1]["gpu_util"] == 0
     c = Canvas(settings)
     c.spark(0, 0, [0] * 120)
-    assert c.image.getpixel((70, 30)) == 0
+    assert c.image.getpixel((70, 30)) == 85
     # A just-opened window has zero pace; positive use must be inverted.
     window = usage["providers"][0]["groups"][0]["windows"][0]
     window.update(usedPercent=50, resetsAt=1793411985 + 300 * 60)
     view = snapshot(settings, now=1793411985, strata=strata, usage=usage, history=rows)
     image = Image.open(io.BytesIO(render_png(view, settings)))
     # Claude is first; Codex follows in the second card section.
-    assert image.getpixel((938, 244)) == 0
+    assert image.getpixel((938, 244)) == 85
 
 
 def test_readable_rows_and_metric_baseline(settings, drawing_font, strata, usage, monkeypatch):
@@ -211,7 +211,7 @@ def test_decode_bars_bounds_and_missing_slots(settings, drawing_font):
     canvas = Canvas(settings)
     canvas.bars(0, 0, [None, 1, 2], width=300, height=40)
     pixels = canvas.image.load()
-    assert pixels[285, 0] == 0  # Latest, maximum request reaches the top.
+    assert pixels[285, 0] == 85  # Latest, maximum request reaches the top.
     assert pixels[255, 0] == 255  # Lower request has a shorter bar.
     assert pixels[225, 20] == 255  # Missing request has no bar.
     assert pixels[300, 20] == 255
@@ -326,3 +326,30 @@ def test_reuse_ring_uses_numeric_ratio(settings, drawing_font, strata, ratio, ex
     else:
         assert len(arcs) == 1
         assert arcs[0] == pytest.approx((-90, expected))
+
+
+def test_provider_icons_plan_free_headings_and_top_update(settings, drawing_font, strata, usage, monkeypatch):
+    import paperhub.render as renderer
+    texts, icons, updates = [], [], []
+    original_text, original_right = Canvas.text, Canvas.right
+    original_icon = renderer.provider_icon
+    def text(self, x, y, value, **kwargs):
+        texts.append(str(value))
+        return original_text(self, x, y, value, **kwargs)
+    def right(self, x, y, value, **kwargs):
+        if str(value).endswith("更新"):
+            updates.append((x, y))
+        return original_right(self, x, y, value, **kwargs)
+    def icon(canvas, provider_id, x, y):
+        icons.append(provider_id)
+        return original_icon(canvas, provider_id, x, y)
+    monkeypatch.setattr(Canvas, "text", text)
+    monkeypatch.setattr(Canvas, "right", right)
+    monkeypatch.setattr(renderer, "provider_icon", icon)
+    view = snapshot(settings, now=1793411985, strata=strata, usage=usage)
+    image = Image.open(io.BytesIO(render_png(view, settings)))
+    assert icons == ["claude-code", "codex", "antigravity"]
+    assert not any("(pro)" in value or "(plus)" in value for value in texts)
+    assert updates == [(535, 38), (940, 38)]
+    assert image.getpixel((800, 110)) == 238  # Flat gray heading background.
+    assert image.getpixel((635, 165)) == 119  # Gray usage fill, distinct from text.
