@@ -291,9 +291,7 @@ def draw_usage(c, view):
 
 
 def draw_footer(c, view):
-    panel(c, (5, 473, 954, 534), fill=238)
-    c.draw.rounded_rectangle((7, 475, 467, 532), radius=8, fill=255)
-    c.draw.rectangle((20, 475, 467, 532), fill=255)
+    panel(c, (5, 473, 954, 534), fill=255)
     s = view["strata"]
     icon(c, "layers", 20, 490)
     c.text(54, 511, "キャッシュ再利用率", bold=True, width=215)
@@ -305,7 +303,6 @@ def draw_footer(c, view):
     c.draw.ellipse((411, 483, 453, 525), outline=102, width=2)
     if percent is not None:
         c.draw.arc((411, 483, 453, 525), start=-90, end=-90 + max(0, min(100, percent)) * 3.6, fill=85, width=8)
-    c.draw.rectangle((469, 475, 699, 532), fill=255)
     c.draw.line((468, 482, 468, 526), fill=0, width=2)
     c.text(482, 497, "最終リクエスト", width=210)
     c.text(482, 525, s["last_request"] if s else "—", size=24, width=210)
