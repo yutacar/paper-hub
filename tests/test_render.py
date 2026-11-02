@@ -25,6 +25,7 @@ def test_png_format_and_levels(settings, drawing_font, strata, usage):
     assert image.size == (960, 540)
     assert image.mode == "L"
     assert set(image.tobytes()) <= set(range(0, 256, 17))
+    assert 0 not in image.tobytes()
     assert image.getpixel((547, 300)) == 102
     assert image.getpixel((100, 473)) == 102
 
@@ -79,7 +80,8 @@ def test_spark_zero_line_and_usage_inversion(settings, drawing_font, strata, usa
     view = snapshot(settings, now=1793411985, strata=strata, usage=usage, history=rows)
     image = Image.open(io.BytesIO(render_png(view, settings)))
     # Claude is first; Codex follows in the second card section.
-    assert image.getpixel((938, 244)) == 85
+    assert image.getpixel((938, 210)) == 85  # Heading remains lighter.
+    assert image.getpixel((938, 244)) == 51
 
 
 def test_readable_rows_and_metric_baseline(settings, drawing_font, strata, usage, monkeypatch):
@@ -101,7 +103,7 @@ def test_readable_rows_and_metric_baseline(settings, drawing_font, strata, usage
         assert row[-1].endswith("s")
     assert all(b[1] - a[1] >= max(a[3], b[3]) * 1.3 for a, b in zip(recent, recent[1:]))
     decode = next(call for call in calls if call[2] == "37.0")
-    unit = next(call for call in calls if call[2] == "t/s")
+    unit = next(call for call in calls if call[2] == " t/s")
     assert unit[1] == decode[1]
     assert unit[0] > decode[0]
     assert any(text == "48°C" for _, _, text, _ in calls)
@@ -260,10 +262,12 @@ def test_failure_header_preserves_body_layout(settings, drawing_font, strata, us
     args = dict(now=1793411985, strata=strata, usage=usage,
                 successes={"strata": 1793411685, "xangi": 1793411685})
     render_png(snapshot(settings, **args), settings)
-    body = [call for call in calls if call[1] not in (38, 65)]
+    def is_metadata(call):
+        return str(call[2]).endswith("更新") or "取得失敗" in str(call[2])
+    body = [call for call in calls if not is_metadata(call)]
     calls.clear()
     render_png(snapshot(settings, **args, failures={"strata": 1793411985, "xangi": 1793411985}), settings)
-    assert [call for call in calls if call[1] not in (38, 65)] == body
+    assert [call for call in calls if not is_metadata(call)] == body
     failures = [call for call in calls if "取得失敗" in str(call[2])]
     assert len(failures) == 2
     assert [y for _, y, _, _ in failures] == [38, 65]
@@ -353,3 +357,47 @@ def test_provider_icons_plan_free_headings_and_top_update(settings, drawing_font
     assert updates == [(535, 38), (940, 38)]
     assert image.getpixel((800, 110)) == 85  # Same dark background as request heading.
     assert image.getpixel((635, 165)) == 119  # Gray usage fill, distinct from text.
+
+
+def test_generating_state_is_not_truncated(settings, drawing_font, strata, monkeypatch):
+    from PIL import ImageDraw
+    texts = []
+    original = ImageDraw.ImageDraw.text
+    def text(self, xy, value, **kwargs):
+        texts.append(str(value))
+        return original(self, xy, value, **kwargs)
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", text)
+    strata["live"]["state"] = "generating"
+    render_png(snapshot(settings, now=1793411985, strata=strata), settings)
+    assert "● Generating" in texts
+
+
+@pytest.mark.parametrize("used,total", [(100.2, 128), (900.2, 1024)])
+def test_large_memory_capacity_and_unit_remain_complete(settings, drawing_font, strata, monkeypatch, used, total):
+    from PIL import ImageDraw
+    texts = []
+    original = ImageDraw.ImageDraw.text
+    def text(self, xy, value, **kwargs):
+        texts.append((xy, str(value)))
+        return original(self, xy, value, **kwargs)
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", text)
+    for prefix in ("gpu_mem", "ram"):
+        strata["hardware"][prefix + "_used"] = used * 2**30
+        strata["hardware"][prefix + "_total"] = total * 2**30
+    render_png(snapshot(settings, now=1793411985, strata=strata), settings)
+    for label, left in (("VRAM", 240), ("RAM", 398)):
+        cells = [value for (x, y), value in texts if x == left + 10 and 186 < y < 261]
+        assert (f"{used}/{total}GB" in cells or
+                label + " GB" in cells and (f"{used}/{total}" in cells or
+                                           str(used) in cells and "/" + str(total) in cells))
+
+
+def test_power_chart_clears_card_border(settings, drawing_font, strata, monkeypatch):
+    charts = []
+    original = Canvas.spark
+    def spark(self, x, y, samples, width=140, height=32):
+        charts.append((y, height))
+        return original(self, x, y, samples, width=width, height=height)
+    monkeypatch.setattr(Canvas, "spark", spark)
+    render_png(snapshot(settings, now=1793411985, strata=strata), settings)
+    assert charts and all(y + height <= 329 for y, height in charts)

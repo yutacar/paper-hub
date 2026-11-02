@@ -161,7 +161,6 @@ def provider_icon(c, provider_id, x, y):
         d.ellipse((x + 2, y + 2, x + 22, y + 22), outline=255, width=2)
 
 
-
 def metric(c, box, label, value, *, kind=None, size=24):
     panel(c, box, fill=255)
     x, y, right, bottom = box
@@ -169,6 +168,26 @@ def metric(c, box, label, value, *, kind=None, size=24):
         icon(c, kind, x + 10, y + 9)
     c.text(x + (42 if kind else 10), y + 23, label, bold=True, width=right - x - (52 if kind else 20))
     c.text(x + 10, bottom - 12, value, size=size, bold=True, width=right - x - 20)
+
+
+def memory_metric(c, box, label, value):
+    """Keep capacity and unit intact by moving GB into the heading if needed."""
+    compact = value.replace(" / ", "/").replace(" GB", "GB")
+    width = box[2] - box[0] - 20
+    if c.draw.textlength(compact, font=c.font(22, True)) <= width:
+        metric(c, box, label, compact, kind="chip", size=22)
+        return
+    capacity = compact.removesuffix("GB")
+    if c.draw.textlength(capacity, font=c.font(22, True)) <= width:
+        metric(c, box, label + " GB", capacity, size=22)
+        return
+    # Very large capacities use two rows at the same minimum font size.
+    panel(c, box)
+    x, y, right, bottom = box
+    c.text(x + 10, y + 20, label + " GB", bold=True)
+    used, total = capacity.split("/", 1)
+    c.text(x + 10, y + 44, used, bold=True)
+    c.text(x + 10, bottom - 6, "/" + total, bold=True)
 
 
 def metadata(c, view, source, right, y, width, failure_y=None):
@@ -184,8 +203,11 @@ def draw_strata(c, view):
     s = view["strata"]
     icon(c, "layers", 20, 17)
     c.text(55, 39, "Strata", size=30, bold=True)
+    state_width = 0
     if s:
-        c.text(418, 65, "● " + s["state"], size=24, width=117)
+        state = "● " + s["state"]
+        state_width = min(250, c.draw.textlength(state, font=c.font(24)))
+        c.right(535, 65, state, size=24, width=250)
     metadata(c, view, "strata", 535, 38, 330)
     if view["status"]["strata"]:
         c.text(24, 121, view["status"]["strata"], width=500)
@@ -194,13 +216,13 @@ def draw_strata(c, view):
         return
     model = s["model"]
     if s["state"].lower() not in ("idle", "—"):
-        model = s["phase"] + " " + s["live_tok_s"] + "t/s · " + model
-    c.text(20, 65, model, width=385)
+        model = s["phase"] + " " + s["live_tok_s"] + " t/s · " + model
+    c.text(20, 65, model, width=535 - state_width - 32)
     panel(c, (12, 78, 540, 178))
     icon(c, "chip", 24, 98)
     c.text(58, 119, "Decode", size=24, bold=True)
     end = c.text(166, 124, s["decode_tok_s"], size=54, bold=True, width=160)
-    c.text(end + 4, 124, "t/s", size=24, width=58)
+    c.text(end, 124, " t/s", size=24, width=58)
     samples = s["decode_history"]
     maximum = spark_summary(samples)
     maximum = "max " + maximum + (" t/s" if maximum not in ("idle", "—") else "")
@@ -215,15 +237,15 @@ def draw_strata(c, view):
             prefill += "（" + s["prefill_date"] + "）"
     metric(c, (12, 186, 232, 261), "Prefill", prefill, kind="layers",
            size=22 if s.get("prefill_cached") else 24)
-    metric(c, (240, 186, 390, 261), "VRAM", s["vram"].replace(" / ", "/").replace(" GB", "GB"), kind="chip", size=22)
-    metric(c, (398, 186, 540, 261), "RAM", s["ram"].replace(" / ", "/").replace(" GB", "GB"), kind="chip", size=22)
+    memory_metric(c, (240, 186, 390, 261), "VRAM", s["vram"])
+    memory_metric(c, (398, 186, 540, 261), "RAM", s["ram"])
     metric(c, (12, 269, 128, 331), "GPU", s["gpu_util"] + "%", size=26)
     metric(c, (136, 269, 252, 331), "温度", s["gpu_temp"] + "°C", size=26)
     panel(c, (260, 269, 540, 331))
-    c.text(270, 294, "電力", bold=True)
-    c.right(528, 294, s["power"], width=198)
-    c.spark(270, 300, [row.get("gpu_power") for row in view["history"]], width=140, height=32)
-    c.draw.line((420, 302, 420, 330), fill=0, width=2)
+    c.text(270, 291, "電力", bold=True)
+    c.right(528, 291, s["power"], width=198)
+    c.spark(270, 297, [row.get("gpu_power") for row in view["history"]], width=140, height=32)
+    c.draw.line((420, 300, 420, 327), fill=102, width=2)
     c.text(430, 328, "Ctx " + s["context"].split(" ", 1)[0], width=100)
 
     panel(c, (12, 339, 540, 465))
@@ -235,11 +257,11 @@ def draw_strata(c, view):
         c.text(24, y, request["time"][-5:], width=64)
         c.text(98, y, request["status"], width=88)
         c.right(340, y, request["tokens"].replace(" → ", "→"), width=144)
-        c.right(449, y, request["decode_tok_s"] + "t/s", width=99)
+        c.right(449, y, request["decode_tok_s"] + " t/s", width=99)
         c.right(528, y, request["duration_s"] + "s", width=69)
         if i < 2:
             for x in range(24, 528, 7):
-                c.draw.line((x, y + 6, x + 3, y + 6), fill=0, width=1)
+                c.draw.line((x, y + 6, x + 3, y + 6), fill=102, width=1)
 
 
 def draw_usage(c, view):
@@ -266,7 +288,7 @@ def draw_usage(c, view):
                 inverted = window["inverted"]
                 fg = 255 if inverted else 34
                 if inverted:
-                    c.draw.rectangle((570, y - 26, 940, y + 5), fill=85)
+                    c.draw.rectangle((570, y - 26, 940, y + 5), fill=51)
                 c.text(578, y, window["label"], fill=fg, width=34)
                 x, by, width = 615, y - 17, 110
                 c.draw.rectangle((x, by, x + width, by + 14), outline=fg, width=2)
@@ -281,7 +303,7 @@ def draw_usage(c, view):
                 c.text(793, y, window["reset"], fill=fg, width=145)
                 y += 33
             for x in range(576, 936, 7):
-                c.draw.line((x, y - 16, x + 3, y - 16), fill=0, width=1)
+                c.draw.line((x, y - 16, x + 3, y - 16), fill=102, width=1)
             y += 12
     text = zero_summary(u["zero_providers"], lambda value: c.draw.textlength(value, font=c.font(22)), width=354)
     if omitted:
@@ -295,7 +317,7 @@ def draw_footer(c, view):
     s = view["strata"]
     icon(c, "layers", 20, 490)
     c.text(54, 511, "キャッシュ再利用率", bold=True, width=215)
-    c.draw.line((269, 482, 269, 526), fill=0, width=2)
+    c.draw.line((269, 482, 269, 526), fill=102, width=2)
     value = s["cache_reuse"] if s else "—"
     c.text(282, 519, value, size=40, bold=True, width=120)
     ratio = number(s.get("cache_reuse_ratio")) if s else None
@@ -303,7 +325,7 @@ def draw_footer(c, view):
     c.draw.ellipse((411, 483, 453, 525), outline=102, width=2)
     if percent is not None:
         c.draw.arc((411, 483, 453, 525), start=-90, end=-90 + max(0, min(100, percent)) * 3.6, fill=85, width=8)
-    c.draw.line((468, 482, 468, 526), fill=0, width=2)
+    c.draw.line((468, 482, 468, 526), fill=102, width=2)
     c.text(482, 497, "最終リクエスト", width=210)
     c.text(482, 525, s["last_request"] if s else "—", size=24, width=210)
     telemetry = view["telemetry"]
@@ -313,7 +335,7 @@ def draw_footer(c, view):
     if number(telemetry.get("rssi")) is not None:
         parts.append(f"{telemetry['rssi']}dBm")
     if parts:
-        c.draw.line((700, 482, 700, 526), fill=0, width=2)
+        c.draw.line((700, 482, 700, 526), fill=102, width=2)
         c.text(714, 513, "  ".join(parts), width=230)
 
 
