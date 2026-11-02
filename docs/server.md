@@ -28,6 +28,30 @@
 
 画像はREADMEから相対参照します。公開前チェックで許可するバイナリはこのパスだけです。描画フォントによって文字の形や幅は変わります。
 
+## レイアウト変更前後を比較
+
+同じfixture・時刻・フォントで比較してください。今回の変更前画像はブランチの分岐元の公開サンプルから取り出せます（リポジトリのルートで実行）。
+
+```sh
+mkdir -p out
+git show main:docs/images/sample.png > out/before.png
+.venv/bin/python -m paperhub.render \
+  --strata tests/fixtures/strata_monitor.json \
+  --usage tests/fixtures/xangi_usage.json \
+  --out out/paper.png --now 1793411985
+.venv/bin/python - <<'PYCODE'
+from PIL import Image
+before = Image.open("out/before.png").convert("L")
+after = Image.open("out/paper.png").convert("L")
+comparison = Image.new("L", (960, 1092), 255)
+comparison.paste(before, (0, 0))
+comparison.paste(after, (0, 552))
+comparison.save("out/comparison.png")
+PYCODE
+```
+
+比較画像は上が変更前、下が変更後です。`main` に統合した後は、変更前のコミットを `git show` の参照に指定してください。フォントが異なる場合、文字の形・幅も変わります。`out/` の画像はGit管理外です。
+
 ## サーバを起動
 
 `.env` の `STRATA_MONITOR_URL`、`XANGI_USAGE_URL`、`FONT_PATH` を設定します。サーバは3項目の不足、URL、フォント、ポート、タイムゾーンの不正を起動時に検出します。

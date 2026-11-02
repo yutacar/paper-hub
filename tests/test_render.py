@@ -25,8 +25,8 @@ def test_png_format_and_levels(settings, drawing_font, strata, usage):
     assert image.size == (960, 540)
     assert image.mode == "L"
     assert set(image.tobytes()) <= set(range(0, 256, 17))
-    assert image.getpixel((500, 300)) == 0
-    assert image.getpixel((100, 490)) == 0
+    assert image.getpixel((547, 300)) == 0
+    assert image.getpixel((100, 473)) == 0
 
 
 def test_no_data_and_offline(settings, drawing_font, strata):
@@ -78,8 +78,8 @@ def test_spark_zero_line_and_usage_inversion(settings, drawing_font, strata, usa
     window.update(usedPercent=50, resetsAt=1793411985 + 300 * 60)
     view = snapshot(settings, now=1793411985, strata=strata, usage=usage, history=rows)
     image = Image.open(io.BytesIO(render_png(view, settings)))
-    # First provider is Claude by default; Codex follows after 118 pixels.
-    assert image.getpixel((948, 225)) == 0
+    # Claude is first; Codex follows in the second card section.
+    assert image.getpixel((938, 244)) == 0
 
 
 def test_readable_rows_and_metric_baseline(settings, drawing_font, strata, usage, monkeypatch):
@@ -104,7 +104,8 @@ def test_readable_rows_and_metric_baseline(settings, drawing_font, strata, usage
     unit = next(call for call in calls if call[2] == "t/s")
     assert unit[1] == decode[1]
     assert unit[0] > decode[0]
-    assert any("48°C" in text and "8 / 180 W" in text for _, _, text, _ in calls)
+    assert any(text == "48°C" for _, _, text, _ in calls)
+    assert any(text == "8 / 180 W" for _, _, text, _ in calls)
     assert any(text == "experts 3189" for _, _, text, _ in calls)
     assert not any("Gen4" in text or "CPU" in text for _, _, text, _ in calls)
 
@@ -153,7 +154,7 @@ def test_fixed_request_columns_and_single_summary(settings, drawing_font, strata
     cells, summaries = [], []
     original, text_original = Canvas.right, Canvas.text
     def right(self, x, y, value, **kwargs):
-        if y in (409, 442, 475):
+        if y in (394, 427, 460):
             cells.append((x, y, value))
         return original(self, x, y, value, **kwargs)
     def text(self, x, y, value, **kwargs):
@@ -165,8 +166,8 @@ def test_fixed_request_columns_and_single_summary(settings, drawing_font, strata
     render_png(snapshot(settings, now=1793411985, strata=strata, usage=usage), settings)
     assert len(summaries) == 1
     assert "\n" not in summaries[0][2]
-    for y in (409, 442, 475):
-        assert [x for x, baseline, _ in cells if baseline == y] == [318, 414, 486]
+    for y in (394, 427, 460):
+        assert [x for x, baseline, _ in cells if baseline == y] == [340, 449, 528]
     c = Canvas(settings)
     end = c.right(318, 50, "65→182", width=134)
     assert end == pytest.approx(318)
@@ -178,7 +179,7 @@ def test_footer_only_received_values(settings, drawing_font, telemetry, expected
     values = []
     original = Canvas.text
     def record(self, x, y, value, **kwargs):
-        if x == 700 and y == 538:
+        if x == 714 and y == 513:
             values.append(value)
         return original(self, x, y, value, **kwargs)
     monkeypatch.setattr(Canvas, "text", record)
@@ -194,12 +195,11 @@ def test_prefill_cached_date_and_small_missing(settings, drawing_font, strata, m
         return original(self, x, y, value, size=size, **kwargs)
     monkeypatch.setattr(Canvas, "text", record)
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
-    assert ("—", 172, 24) in calls
+    assert ("—", 249, 24) in calls
     calls.clear()
     render_png(snapshot(settings, now=1793411985, strata=strata,
                         last_prefill={"value": 131, "at": 1793142000}), settings)
-    assert ("131", 172, 48) in calls
-    assert ("t/s（10/28）", 172, 24) in calls
+    assert ("131 t/s（10/28）", 249, 22) in calls
     # A current qualifying request overrides the stored fallback.
     strata["requests"] = [{"prompt_tokens": 1000, "reused": 0, "prompt_ms": 1000}]
     view = snapshot(settings, now=1793411985, strata=strata, last_prefill={"value": 131, "at": 1793142000})
@@ -238,7 +238,7 @@ def test_cli_reads_prefill_without_modifying_db(tmp_path, settings, drawing_font
     fixtures = Path(__file__).parent / "fixtures"
     main(["--strata", str(fixtures / "strata_monitor.json"), "--usage", str(fixtures / "xangi_usage.json"),
           "--out", str(tmp_path / "image.png"), "--now", "1793411985", "--history-db", str(path)])
-    assert "t/s（10/28）" in captions
+    assert "131 t/s（10/28）" in captions
     assert path.read_bytes() == before
 
 
@@ -260,12 +260,69 @@ def test_failure_header_preserves_body_layout(settings, drawing_font, strata, us
     args = dict(now=1793411985, strata=strata, usage=usage,
                 successes={"strata": 1793411685, "xangi": 1793411685})
     render_png(snapshot(settings, **args), settings)
-    body = [call for call in calls if call[1] > 30]
+    body = [call for call in calls if call[1] not in (38, 65)]
     calls.clear()
     render_png(snapshot(settings, **args, failures={"strata": 1793411985, "xangi": 1793411985}), settings)
-    assert [call for call in calls if call[1] > 30] == body
+    assert [call for call in calls if call[1] not in (38, 65)] == body
     failures = [call for call in calls if "取得失敗" in str(call[2])]
     assert len(failures) == 2
-    assert all(y == 30 and "10:54" in text and "10:59" in text for _, y, text, _ in failures)
+    assert [y for _, y, _, _ in failures] == [38, 65]
+    assert all("10:54" in text and "10:59" in text for _, _, text, _ in failures)
     assert failures[0][0] > 150
     assert failures[1][0] > 650
+
+
+def test_cards_keep_three_usage_groups_and_decode_chart(settings, drawing_font, strata, usage, monkeypatch):
+    texts, charts = [], []
+    original_text, original_bars = Canvas.text, Canvas.bars
+    def text(self, x, y, value, **kwargs):
+        texts.append(str(value))
+        return original_text(self, x, y, value, **kwargs)
+    def bars(self, x, y, samples, width=300, height=40):
+        charts.append((x, y, width, height))
+        return original_bars(self, x, y, samples, width=width, height=height)
+    monkeypatch.setattr(Canvas, "text", text)
+    monkeypatch.setattr(Canvas, "bars", bars)
+    render_png(snapshot(settings, now=1793411985, strata=strata, usage=usage), settings)
+    assert any("Antigravity Gemini" in value for value in texts)
+    assert not any(value.startswith("ほか") for value in texts)
+    assert charts == [(230, 130, 300, 40)]
+
+
+def test_long_and_missing_content_stays_inside_canvas(settings, drawing_font, strata, usage, monkeypatch):
+    from PIL import ImageDraw
+    boxes = []
+    original = ImageDraw.ImageDraw.text
+    def text(self, xy, value, **kwargs):
+        boxes.append(self.textbbox(xy, value, font=kwargs["font"], anchor=kwargs["anchor"]))
+        return original(self, xy, value, **kwargs)
+    monkeypatch.setattr(ImageDraw.ImageDraw, "text", text)
+    strata["engine"]["model"] = "Very long model name " * 20
+    strata["requests"] = []
+    for provider in usage["providers"]:
+        provider["label"] = "Long provider name " * 10
+    render_png(snapshot(settings, now=1793411985, strata=strata, usage=usage,
+                        last_prefill={"value": 131, "at": 1793142000},
+                        telemetry={"bat": 100, "rssi": -200}), settings)
+    assert boxes
+    assert all(0 <= left <= right <= 960 and 0 <= top <= bottom <= 540
+               for left, top, right, bottom in boxes)
+
+
+@pytest.mark.parametrize("ratio,expected", [(0, -90), (0.74, 176.4), (None, None)])
+def test_reuse_ring_uses_numeric_ratio(settings, drawing_font, strata, ratio, expected, monkeypatch):
+    from PIL import ImageDraw
+    arcs = []
+    original = ImageDraw.ImageDraw.arc
+    def arc(self, box, start, end, **kwargs):
+        arcs.append((start, end))
+        return original(self, box, start=start, end=end, **kwargs)
+    monkeypatch.setattr(ImageDraw.ImageDraw, "arc", arc)
+    view = snapshot(settings, now=1793411985, strata=strata)
+    view["strata"]["cache_reuse_ratio"] = ratio
+    render_png(view, settings)
+    if expected is None:
+        assert arcs == []
+    else:
+        assert len(arcs) == 1
+        assert arcs[0] == pytest.approx((-90, expected))
