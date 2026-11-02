@@ -278,8 +278,8 @@ def draw_strata(c, view):
 def draw_usage(c, view):
     icon(c, "bars", 568, 17)
     c.text(604, 39, "AI利用量", size=30, bold=True)
-    metadata(c, view, "xangi", 940, 38, 200, failure_y=65)
-    panel(c, (564, 72, 946, 453))
+    metadata(c, view, "xangi", 940, 38, 200, failure_y=64)
+    panel(c, (564, 72, 946, 455))
     u = view["usage"]
     if u is None:
         c.text(578, 118, "データなし", size=26)

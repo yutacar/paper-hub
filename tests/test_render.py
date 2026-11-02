@@ -270,7 +270,7 @@ def test_failure_header_preserves_body_layout(settings, drawing_font, strata, us
     assert [call for call in calls if not is_metadata(call)] == body
     failures = [call for call in calls if "取得失敗" in str(call[2])]
     assert len(failures) == 2
-    assert [y for _, y, _, _ in failures] == [38, 65]
+    assert [y for _, y, _, _ in failures] == [38, 64]
     assert all("10:54" in text and "10:59" in text for _, _, text, _ in failures)
     assert failures[0][0] > 150
     assert failures[1][0] > 650
@@ -490,7 +490,7 @@ def test_panel_tops_and_header_metric_spacing(settings, drawing_font, strata, mo
     strata["live"]["state"] = "generating"
     render_png(snapshot(settings, now=1793411985, strata=strata), settings)
     assert (12, 72, 540, 158) in boxes
-    assert (564, 72, 946, 453) in boxes
+    assert (564, 72, 946, 455) in boxes
     assert next(y for _, y, value, _ in texts if value == "● Generating") == 64
     assert next(y for x, y, value, _ in texts if x == 20 and strata["engine"]["model"] in value) == 64
     label = next(y for _, y, value, _ in texts if value == "Prefill")
