@@ -99,15 +99,15 @@ DEPLOY_DIR=
 
 ### エンドポイント
 
-- `GET /paper.png` … 960×540、グレースケール PNG（16階調に量子化、ディザなし）。クエリ `bat`（%）と `rssi`（dBm）を受け取ったら保存し、次回描画のフッターに出す
+- `GET /paper.png?view=dashboard|strata|usage` …view省略時はdashboard、不正値は422。`X-Paper-View`ヘッダに描画したviewを返す。 960×540、グレースケール PNG（16階調に量子化、ディザなし）。クエリ `bat`（%）と `rssi`（dBm）を受け取ったら保存し、次回描画のフッターに出す
 - `GET /paper.json` … 描画に使った整形済みの値（デバッグ用）
 - `GET /healthz` … `{"ok": true, "strata_age_s": .., "xangi_age_s": ..}`
 
-PNG は毎リクエスト生成せず、データ更新時に再生成してメモリにキャッシュする。
+PNGはviewごとにキャッシュする。起動・取得失敗確定時とデータ受信時に同じsnapshotから3画面を描画し、全画面が成功してからまとめて確定する。受信データは履歴とPrefillを含むSQLiteトランザクション内で検証し、描画例外ではロールバックして前のデータを保持する。生成したPNGをそのままキャッシュへ採用し、GETでは再描画しない。表示中のviewはサーバに保存しない。`/paper.json`と`/healthz`の返却内容は従来どおり。
 
 ### CLI
 
-- `python -m paperhub.render --strata tests/fixtures/strata_monitor.json --usage tests/fixtures/xangi_usage.json --out out/paper.png --now <unix秒>`
+- `python -m paperhub.render --strata tests/fixtures/strata_monitor.json --usage tests/fixtures/xangi_usage.json --out out/paper.png --now <unix秒> --view dashboard|strata|usage`
   ネットワークなしで PNG を生成する（Mac での見た目確認とテスト用）。
 
 ---
@@ -195,6 +195,16 @@ PNG は毎リクエスト生成せず、データ更新時に再生成してメ�
 - フッターはy=471〜534で画面下に5pxの余白を置く。最終リクエストの2行は32px間隔とする。
 - フッターはキャッシュ再利用率・割合のリング・最終リクエスト。電池・RSSIは受信した値だけを「電池 87%  -58dBm」の形式で表示する。未受信値や通信品質の推測値は表示しない。
 
+### Strata詳細（view=strata）
+
+960×540全面にDecode・Prefill・Context実数と百分率・VRAM/RAMバー・再利用率リング・GPU/温度/電力推移・CPU/PCIe・expertsを配置する。Decodeは64px、本文は22px以上。直近リクエストは既存の最大3件を維持し、日付付き時刻と固定列、行高29pxで表示する。取得失敗・データなし・オフラインはダッシュボードと同じ判定を使う。
+
+### AI利用量詳細（view=usage）
+
+同じsnapshotの全非ゼロgroupを、幾何アイコン・プランなしの見出しで表示する。1windowをラベル・幅300pxのバー・使用率・目安線・相対リセット時刻と日時の1行にする。警告行は51地に白文字。0%groupは末尾でプロバイダごとに集約し、最初に入らないgroupから末尾までを「ほかNグループ」とし、後ろの小さいgroupを飛び越して表示しない。USAGE_ORDERとUSAGE_HIDEは共通で適用する。
+
+詳細画面のフッターは、最終リクエスト、受信済みの電池・RSSI、3つの点による画面位置、次画面の名前（B: AI利用量 / B: ダッシュボード）を22pxで表示する。ダッシュボードの見た目は変更しない。
+
 ---
 
 ## 5. デプロイ（Mac → Pi）
@@ -206,6 +216,8 @@ PNG は毎リクエスト生成せず、データ更新時に再生成してメ�
 3. `rsync -av --delete` で転送。除外: `.git/`、`.venv/`、`.env`、`data/`、`out/`、`__pycache__/`、`firmware/`
 4. Pi 側で `python3 -m venv .venv`（無ければ）→ `pip install -r requirements.txt`
 5. `systemctl --user restart paper-hub`（ユニットが有効な場合のみ）→ `/healthz` を確認して結果を表示
+
+3画面対応ではサーバを先にデプロイしてX-Paper-Viewを確認し、その後ファームウェアを書き込む。旧サーバはヘッダがないため、新ファームは描画を拒否して前の画面を保持する。
 
 Pi 側の `.env` は転送しない（Pi 上で `.env.sample` から別途作る）。
 
@@ -221,12 +233,15 @@ Pi 側の `.env` は転送しない（Pi 上で `.env.sample` から別途作る
 - 動作:
   1. 起動（タイマー or ボタン）
   2. Wi-Fi 接続（10秒でタイムアウト）
-  3. HTTPClientで `GET {HUB_URL}?bat=<電池%>&rssi=<dBm>` をPSRAMへ全量受信。最大1MiB。ステータスと受信サイズをログ出力
-  4. サイズ・PNG構造・CRC・PSRAM上のデコードを検証後、`M5.Display.drawPng()` で全面描画（16階調）
+  3. HTTPClientで `GET {HUB_URL}?bat=<電池%>&rssi=<dBm>&view=<view>` をPSRAMへ全量受信。最大1MiB。ステータスと受信サイズをログ出力
+  4. `X-Paper-View`が要求と一致すること、サイズ・PNG構造・CRC・PSRAM上のデコードを検証後、`M5.Display.drawPng()` で全面描画（16階調）
   5. Wi-Fi を切って deep sleep
 - 更新間隔: 7:00〜24:00 は10分、0:00〜7:00 は30分（NTP で時刻取得、RTC に保持）
-- ボタンA: GPIO4のLowでdeep sleepから復帰して更新。押しっぱなし時は最大2秒待ち、その回はタイマー復帰のみ。
+- ボタンA（GPIO4）: 表示中の画面を更新。ボタンB（GPIO3）: ダッシュボード→Strata詳細→AI利用量詳細→ダッシュボードの順に巡回。両方ともactive Low。ext1のANY_LOWとRTC_PERIPH=ON、各RTCピンの内部プルアップを使う。
+- タイマーとAでは画面を維持し、A+B同時復帰ではダッシュボードにする。ext1の記録に加え、起動直後のGPIO入力でもう一方がLowならBothへ昇格する。電源投入・リセットではダッシュボードから始める。RTC_DATA_ATTRに保持するviewは描画成功後だけ確定し、失敗時は前の状態を保持する。
+- 両ボタンが離れるまで最大2秒待ち、まだLowのボタンだけをその回の復帰マスクから外す。両方外れた場合はタイマー復帰のみ。GPIO3は入力として使う。
 - 失敗時: 前回の画面を残し、右下に小さな「×」と時刻だけ部分描画して sleep
+- `[boot]`はtimer/button_a/button_b/button_ab/power_on_or_reset、`[view]`はfrom/toとresult=ok|kept、`[sleep]`はA・Bそれぞれの有効状態を出す。
 - 各段階を115200bpsでログ出力。SSID・パスワード・取得先URLは出力しない。
 - RTCはESP32の内部タイマーを使い、未同期時は1800秒を選ぶ。
 - 書き込みはMacにUSB接続して行う。READMEからリンクするファームウェア手順にarduino-cliの導入・ビルド・書き込みを記載

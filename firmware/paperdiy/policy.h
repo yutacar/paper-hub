@@ -9,6 +9,49 @@ constexpr std::size_t kMaxPngBytes = 1024 * 1024;
 constexpr int kWidth = 960;
 constexpr int kHeight = 540;
 
+enum class View : std::uint8_t { Dashboard = 0, Strata = 1, Usage = 2 };
+enum class Button : std::uint8_t { None, A, B, Both };
+
+inline std::uint64_t pinBit(int pin) {
+  return pin >= 0 && pin < 64 ? std::uint64_t(1) << pin : 0;
+}
+
+inline Button buttonFromWakeMask(std::uint64_t mask, int pinA, int pinB) {
+  const bool a = (mask & pinBit(pinA)) != 0, b = (mask & pinBit(pinB)) != 0;
+  return a ? (b ? Button::Both : Button::A) : (b ? Button::B : Button::None);
+}
+
+// Keep the latched wake source; promote a chord if the other input is now low.
+// Ignore button levels on timer/cold boots, which have no button wake source.
+inline Button resolveButton(Button wake, bool aPressed, bool bPressed) {
+  if (wake == Button::None || wake == Button::Both) return wake;
+  if ((wake == Button::A && bPressed) || (wake == Button::B && aPressed)) return Button::Both;
+  return wake;
+}
+
+inline View sanitizeView(std::uint8_t raw) {
+  return raw <= 2 ? static_cast<View>(raw) : View::Dashboard;
+}
+
+inline View nextView(View displayed, Button pressed) {
+  displayed = sanitizeView(static_cast<std::uint8_t>(displayed));
+  if (pressed == Button::Both) return View::Dashboard;
+  if (pressed == Button::B) return static_cast<View>((static_cast<unsigned>(displayed) + 1) % 3);
+  return displayed;
+}
+
+inline const char* viewQuery(View view) {
+  switch (view) {
+    case View::Strata: return "strata";
+    case View::Usage: return "usage";
+    default: return "dashboard";
+  }
+}
+
+inline std::uint64_t releasedWakeMask(bool aReleased, bool bReleased, int pinA, int pinB) {
+  return (aReleased ? pinBit(pinA) : 0) | (bReleased ? pinBit(pinB) : 0);
+}
+
 inline const char* ntpServer(const char* configured) {
   return configured && configured[0] ? configured : "pool.ntp.org";
 }

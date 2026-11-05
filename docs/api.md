@@ -26,3 +26,5 @@ with open("tests/fixtures/xangi_usage.json", encoding="utf-8") as stream:
 
 - `paperhub.strata`: `prefill_tokens_per_second`、`context_usage`、`relative_time`、`is_strata_offline`
 - `paperhub.usage`: `pace_percent`、`reset_label`、`provider_is_stale`
+
+詳細画面でも `recent_requests` は最大3件です。`render_png(snapshot, settings, mode="dashboard")` はdashboard/strata/usageを受け取り、CLIでは `--view` で選びます。画面切替のためにformat_strata/format_usageの計算APIは変更していません。

@@ -33,6 +33,20 @@ ufwを使用する場合、既定ポートは次で許可できます。設定�
 sudo ufw allow 8090/tcp
 ```
 
+## 3画面対応の更新順序
+
+先にサーバをデプロイし、`/paper.png?view=strata` と `?view=usage` がHTTP 200、対応する `X-Paper-View` を返すことを確認してください。その後PaperDIYのファームウェアを書き込みます。旧ファームはview省略でダッシュボードを取得できますが、新ファームはヘッダのない旧サーバの画像を拒否します。逆の順序では前の画面が残り、×マーカーになります。
+
+```sh
+mkdir -p out
+curl --fail --dump-header out/strata.headers \
+  'http://127.0.0.1:8090/paper.png?view=strata' -o out/strata.png
+curl --fail --dump-header out/usage.headers \
+  'http://127.0.0.1:8090/paper.png?view=usage' -o out/usage.png
+```
+
+上記はサーバと同じマシンで既定ポートを確認する例です。ヘッダと画像はGit管理外のoutに保存します。
+
 ## Macからデプロイ
 
 開発環境にSSHとrsyncを用意し、SSHでPiへ接続できる状態にします。開発側の `.env` だけに `DEPLOY_TARGET` と `DEPLOY_DIR` を設定します。Pi側のユニットと `.env` は上の手順で先に用意してください。

@@ -6,6 +6,8 @@ import json
 import math
 import time
 from functools import lru_cache
+from datetime import datetime
+from zoneinfo import ZoneInfo
 from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
@@ -350,13 +352,182 @@ def draw_footer(c, view):
         c.text(714, 511, "  ".join(parts), width=230)
 
 
-def render_png(view, settings):
+def detail_header(c, view, title, source):
+    panel(c, (5, 5, 954, 479), fill=238)
+    c.text(20, 39, title, size=32, bold=True, width=460)
+    metadata(c, view, source, 940, 39, 430)
+
+
+def detail_footer(c, view, mode):
+    panel(c, (5, 487, 954, 534))
+    last = view["strata"]["last_request"] if view["strata"] else "—"
+    c.text(20, 517, "最終 " + last, width=350)
+    parts = []
+    for key, suffix in (("bat", "%"), ("rssi", "dBm")):
+        value = number(view["telemetry"].get(key))
+        if value is not None:
+            parts.append(("電池 " if key == "bat" else "") + str(value) + suffix)
+    if parts:
+        c.text(382, 517, "  ".join(parts), width=242)
+    position = "○ ● ○  B: AI利用量" if mode == "strata" else "○ ○ ●  B: ダッシュボード"
+    c.right(940, 517, position, width=300)
+
+
+def detail_bar(c, x, y, width, percent, *, height=8, ink=119):
+    c.draw.rectangle((x, y, x + width, y + height), outline=102, width=2)
+    value = number(percent)
+    if value is not None:
+        filled = round((width - 4) * max(0, min(100, value)) / 100)
+        if filled:
+            c.draw.rectangle((x + 2, y + 2, x + 1 + filled, y + height - 2), fill=ink)
+
+
+def draw_strata_detail(c, view):
+    detail_header(c, view, "Strata 詳細", "strata")
+    detail_footer(c, view, "strata")
+    s = view["strata"]
+    if view["status"]["strata"]:
+        c.text(24, 125, view["status"]["strata"], size=28, width=904)
+        return
+    if not s:
+        return
+    c.text(20, 68, s["model"], width=680)
+    c.right(940, 68, "● " + s["state"], size=24, width=220)
+    panel(c, (12, 80, 460, 199))
+    c.text(28, 108, "Decode", size=26, bold=True)
+    maximum = spark_summary(s["decode_history"])
+    c.right(446, 108, "max " + maximum + (" t/s" if maximum not in ("idle", "—") else ""), width=260)
+    end = c.text(28, 164, s["decode_tok_s"], size=64, bold=True, width=310)
+    c.text(end, 164, " t/s", size=26, width=80)
+    c.bars(28, 173, s["decode_history"], width=418, height=20)
+    panel(c, (468, 80, 704, 199))
+    c.text(484, 108, "Prefill", size=26, bold=True)
+    value = s["prefill_tok_s"]
+    c.text(484, 160, value + (" t/s" if value != "—" else ""),
+           size=24 if value == "—" else 32, bold=True, width=204)
+    if s.get("prefill_cached"):
+        c.text(484, 191, "履歴 " + s["prefill_date"], width=204)
+    panel(c, (712, 80, 948, 199))
+    c.text(728, 108, "Context", size=26, bold=True)
+    ctx = s.get("context_value")
+    percent = ctx["percent"] if ctx else None
+    c.text(728, 151, f"{percent:.1f}%" if percent is not None else "—", size=36, bold=True, width=204)
+    c.text(728, 179, s["context"].split(" ", 1)[-1] if ctx else "—", width=204)
+    detail_bar(c, 728, 188, 204, percent)
+    hardware = view.get("details", {}).get("hardware", {})
+    for x, label, key, prefix in ((12, "VRAM", "vram", "gpu_mem"), (328, "RAM", "ram", "ram")):
+        panel(c, (x, 207, x + 308, 277))
+        c.text(x + 16, 230, label, size=22, bold=True)
+        c.right(x + 292, 262, compact_memory(s[key]), size=24, width=276)
+        used, total = number(hardware.get(prefix + "_used")), number(hardware.get(prefix + "_total"))
+        ratio = used / total * 100 if used is not None and total is not None and total > 0 else None
+        detail_bar(c, x + 16, 267, 276, ratio, height=6)
+    panel(c, (644, 207, 948, 277))
+    c.text(660, 235, "キャッシュ再利用", size=24, bold=True, width=224)
+    c.text(660, 268, s["cache_reuse"], size=34, bold=True, width=160)
+    ratio = number(s["cache_reuse_ratio"])
+    c.draw.ellipse((882, 217, 932, 267), outline=102, width=2)
+    if ratio is not None:
+        c.draw.arc((882, 217, 932, 267), -90, -90 + max(0, min(1, ratio)) * 360, fill=85, width=9)
+    panel(c, (12, 285, 636, 345))
+    c.text(28, 312, f"GPU {s['gpu_util']}%   {s['gpu_temp']}°C   {s['power']}", size=24, width=592)
+    samples = [row.get("gpu_power") for row in view["history"]]
+    c.spark(28, 319, samples, width=350, height=18)
+    c.right(620, 338, "電力 max " + spark_summary(samples) + " W", width=230)
+    panel(c, (644, 285, 948, 345))
+    c.text(660, 308, "CPU " + s["cpu"] + "%", width=272)
+    c.text(660, 337, s["pcie"], width=136)
+    c.right(932, 337, "experts " + s["experts_cached"], width=162)
+    panel(c, (12, 353, 948, 471))
+    c.text(28, 378, "直近リクエスト", size=24, bold=True)
+    stamps = view.get("details", {}).get("request_times", [])
+    for i, request in enumerate(s["recent_requests"][:3]):
+        y = 407 + i * 29
+        stamp = stamps[i] if i < len(stamps) else None
+        label = datetime.fromtimestamp(stamp, ZoneInfo(c.settings.tz)).strftime("%m/%d %H:%M") if stamp is not None else request["time"]
+        c.text(28, y, label, width=164)
+        c.text(208, y, request["status"], width=116)
+        c.right(568, y, request["tokens"].replace(" → ", "→"), width=232)
+        c.right(764, y, request["decode_tok_s"] + " t/s", width=180)
+        c.right(932, y, request["duration_s"] + " s", width=152)
+
+
+def detail_reset(view, provider, group, index, tz):
+    resets = view.get("details", {}).get("usage_resets", {}).get(provider, {}).get(group, [])
+    stamp = number(resets[index]) if index < len(resets) else None
+    if stamp is None:
+        return "—", "—"
+    remaining = stamp - view["updated_at"]
+    if remaining <= 0:
+        relative = "リセット済"
+    elif remaining < 60:
+        relative = "まもなく"
+    else:
+        minutes = int(remaining // 60)
+        relative = f"あと{minutes // 60}h{minutes % 60:02d}m"
+    return relative, datetime.fromtimestamp(stamp, ZoneInfo(tz)).strftime("%m/%d %H:%M")
+
+
+def draw_usage_detail(c, view):
+    detail_header(c, view, "AI利用量 詳細", "xangi")
+    panel(c, (12, 68, 948, 471))
+    detail_footer(c, view, "usage")
+    u = view["usage"]
+    if u is None:
+        c.text(24, 125, "データなし", size=28)
+        return
+    y, omitted = 100, 0
+    groups = [(provider, group) for provider in u["providers"] for group in provider["groups"]]
+    for index, (provider, group) in enumerate(groups):
+        if y + 32 + max(0, len(group["windows"]) - 1) * 36 > 425:
+            omitted = len(groups) - index
+            break
+        c.draw.rounded_rectangle((18, y - 26, 942, y + 7), radius=7, fill=85)
+        provider_icon(c, provider["id"], 30, y - 23)
+        c.text(68, y, group["display_heading"], size=26, bold=True, fill=255, width=858)
+        y += 32
+        for i, window in enumerate(group["windows"]):
+            fg = 255 if window["inverted"] else 34
+            if window["inverted"]:
+                c.draw.rectangle((18, y - 26, 942, y + 7), fill=51)
+            c.text(30, y, window["label"], size=24, fill=fg, width=50)
+            x, by, width = 94, y - 18, 300
+            c.draw.rectangle((x, by, x + width, by + 16), outline=fg, width=2)
+            used = window["used_percent"]
+            if used is not None:
+                fill = round((width - 4) * max(0, min(100, used)) / 100)
+                if fill:
+                    c.draw.rectangle((x + 2, by + 2, x + 1 + fill, by + 14), fill=187 if window["inverted"] else 119)
+            if window["pace_percent"] is not None:
+                px = x + round(width * window["pace_percent"] / 100)
+                c.draw.line((px, by - 3, px, by + 19), fill=fg, width=3)
+            c.right(484, y, window["used_label"], size=26, fill=fg, width=78)
+            relative, absolute = detail_reset(view, provider["id"], group["id"], i, c.settings.tz)
+            c.text(508, y, relative, fill=fg, width=196)
+            c.text(724, y, absolute, fill=fg, width=202)
+            y += 36
+        y += 12
+    summary = zero_summary(u["zero_providers"], lambda text: c.draw.textlength(text, font=c.font(22)), width=912)
+    if omitted:
+        summary = f"ほか{omitted}グループ" + (" · " + summary if summary else "")
+    if summary:
+        c.text(24, 463, summary, width=912)
+
+
+def render_png(view, settings, mode="dashboard"):
     c = Canvas(settings)
-    panel(c, (5, 5, 547, 463), fill=238)
-    panel(c, (557, 5, 954, 463), fill=238)
-    draw_strata(c, view)
-    draw_usage(c, view)
-    draw_footer(c, view)
+    if mode == "dashboard":
+        panel(c, (5, 5, 547, 463), fill=238)
+        panel(c, (557, 5, 954, 463), fill=238)
+        draw_strata(c, view)
+        draw_usage(c, view)
+        draw_footer(c, view)
+    elif mode == "strata":
+        draw_strata_detail(c, view)
+    elif mode == "usage":
+        draw_usage_detail(c, view)
+    else:
+        raise ValueError("Unknown paper view")
     image = c.image.point([int((i + 8) // 17) * 17 for i in range(256)])
     output = io.BytesIO()
     image.save(output, format="PNG")
@@ -384,6 +555,7 @@ def main(argv=None):
     parser.add_argument("--strata", required=True, type=Path)
     parser.add_argument("--usage", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--view", choices=("dashboard", "strata", "usage"), default="dashboard")
     parser.add_argument("--now", type=float, default=None)
     parser.add_argument("--history-db", type=Path, help="既存SQLiteの最後の有効Prefillを参照（読取専用）")
     args = parser.parse_args(argv)
@@ -404,7 +576,7 @@ def main(argv=None):
                         successes={"strata": now, "xangi": now},
                         history=fixture_history(strata, now))
         args.out.parent.mkdir(parents=True, exist_ok=True)
-        args.out.write_bytes(render_png(view, settings))
+        args.out.write_bytes(render_png(view, settings, mode=args.view))
     except (ValueError, OSError) as exc:
         parser.exit(2, f"描画に失敗しました: {exc}\n")
 

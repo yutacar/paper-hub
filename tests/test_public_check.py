@@ -118,6 +118,7 @@ def test_only_public_sample_image_is_allowed():
     stream = io.BytesIO()
     Image.new("L", (960, 540), 255).save(stream, format="PNG")
     payload = stream.getvalue()
-    assert inspect_blob(payload, "docs/images/sample.png", "test", ()) == []
+    for path in ("docs/images/sample.png", "docs/images/sample-strata.png", "docs/images/sample-usage.png"):
+        assert inspect_blob(payload, path, "test", ()) == []
     for path in ("docs/images/other.png", "other/sample.png", "docs/images/sample.png.backup"):
         assert inspect_blob(payload, path, "test", ())[0].category == "binary_requires_review"

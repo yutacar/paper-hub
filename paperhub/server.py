@@ -3,6 +3,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 import httpx
 from fastapi import FastAPI, Query, Response
@@ -38,15 +39,17 @@ def create_app(settings=None, *, transport=None, clock=None, renderer=None, poll
     app = FastAPI(lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
     @app.get("/paper.png")
-    async def png(bat: int | None = Query(None, ge=0, le=100),
+    async def png(view: Literal["dashboard", "strata", "usage"] = "dashboard",
+                  bat: int | None = Query(None, ge=0, le=100),
                   rssi: int | None = Query(None, ge=-200, le=0)):
         runtime = app.state.runtime
         runtime.save_telemetry(bat=bat, rssi=rssi)
-        return Response(runtime.png, media_type="image/png", headers={"Cache-Control": "no-store"})
+        return Response(runtime.get_png(view), media_type="image/png",
+                        headers={"Cache-Control": "no-store", "X-Paper-View": view})
 
     @app.get("/paper.json")
     async def display():
-        return app.state.runtime.view
+        return {key: value for key, value in app.state.runtime.view.items() if key != "details"}
 
     @app.get("/healthz")
     async def health():
