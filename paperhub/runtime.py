@@ -22,7 +22,7 @@ class Runtime:
         self.data = {"strata": None, "xangi": None}
         self.successes, self.failures = {}, {}
         self.telemetry = history.telemetry()
-        self.view, self.png = None, None
+        self.view, self.pngs = None, {}
         # Startup history is loaded before the very first render.
         self.refresh()
 
@@ -32,8 +32,16 @@ class Runtime:
                         successes=self.successes, failures=self.failures,
                         history=self.history.recent(now), telemetry=self.telemetry,
                         last_prefill=self.history.last_prefill())
-        png = self.renderer(view, self.settings)
-        self.view, self.png = view, png
+        self.view = view
+        self.pngs.clear()
+
+    def get_png(self, mode="dashboard"):
+        if mode not in ("dashboard", "strata", "usage"):
+            raise ValueError("Unknown paper view")
+        if mode not in self.pngs:
+            self.pngs[mode] = (self.renderer(self.view, self.settings) if mode == "dashboard" else
+                               self.renderer(self.view, self.settings, mode=mode))
+        return self.pngs[mode]
 
     async def poll_once(self, name):
         url = self.settings.strata_url if name == "strata" else self.settings.usage_url
@@ -52,11 +60,10 @@ class Runtime:
                 next_data = {**self.data, name: payload}
                 next_successes = {**self.successes, name: now}
                 next_failures = {key: value for key, value in self.failures.items() if key != name}
-                candidate = snapshot(self.settings, now=now, strata=next_data["strata"], usage=next_data["xangi"],
+                snapshot(self.settings, now=now, strata=next_data["strata"], usage=next_data["xangi"],
                                      successes=next_successes, failures=next_failures,
                                      history=self.history.recent(now), telemetry=self.telemetry,
                                      last_prefill=self.history.last_prefill())
-                self.renderer(candidate, self.settings)
             except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
                 status = response.status_code if response is not None else None
                 prefix = response.text[:200] if response is not None else ""

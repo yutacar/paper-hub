@@ -3,7 +3,7 @@
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from .common import number, rounded
+from .common import mapping, number, rounded
 from .strata import format_strata, is_strata_offline
 from .usage import format_usage
 
@@ -31,6 +31,14 @@ def snapshot(settings, *, now, strata=None, usage=None, successes=None,
                 strata_view.update(prefill_value=value, prefill_tok_s=str(rounded(value)),
                                    prefill_cached=True, prefill_date=date)
     return {
+        "details": {
+            "request_times": [number(mapping(item).get("time")) for item in (mapping(strata).get("requests") or [])[:3]],
+            "hardware": {key: mapping(mapping(strata).get("hardware")).get(key)
+                         for key in ("gpu_mem_used", "gpu_mem_total", "ram_used", "ram_total")},
+            "usage_resets": {provider.get("id"): {group.get("id"): [number(w.get("resetsAt"))
+                              for w in group.get("windows") or []] for group in provider.get("groups") or []}
+                             for provider in mapping(usage).get("providers") or []},
+        },
         "updated_at": now, "updated_label": clock(now),
         "strata": strata_view,
         "usage": format_usage(usage, now=now, tz=settings.tz, order=settings.order,
