@@ -13,6 +13,8 @@
 
 namespace {
 constexpr gpio_num_t kButtonA = GPIO_NUM_4;  // PaperDIY BtnA, active low.
+constexpr gpio_num_t kButtonB = GPIO_NUM_3;  // PaperDIY BtnB, active low; input only.
+RTC_DATA_ATTR uint8_t displayedView = 0;
 constexpr unsigned kWifiTimeoutMs = 10000;
 constexpr unsigned kNtpTimeoutMs = 5000;
 constexpr unsigned kReceiveTimeoutMs = 30000;
@@ -79,7 +81,7 @@ void syncClock() {
                 ntpSyncedThisBoot ? "NTP" : (clockValid() ? "RTC" : "unknown"), millis() - started);
 }
 
-bool fetchAndDraw() {
+bool fetchAndDraw(paperhub::View target) {
   String url(HUB_URL);
   // Append telemetry before an optional fragment, preserving existing queries.
   const int fragment = url.indexOf('#');
@@ -87,7 +89,7 @@ bool fetchAndDraw() {
   url += url.indexOf('?') >= 0 ? '&' : '?';
   const auto battery = M5.Power.getBatteryLevel();
   if (battery >= 0 && battery <= 100) url += "bat=" + String(battery) + "&";
-  url += "rssi=" + String(WiFi.RSSI());
+  url += "rssi=" + String(WiFi.RSSI()) + "&view=" + paperhub::viewQuery(target);
   if (!url.startsWith("http://")) {
     Serial.println("[http] status=0 received_bytes=0 error=expected_http_url");
     return false;
@@ -100,11 +102,18 @@ bool fetchAndDraw() {
     Serial.println("[http] status=0 received_bytes=0 error=begin_failed");
     return false;
   }
+  const char* responseHeaders[] = {"X-Paper-View"};
+  http.collectHeaders(responseHeaders, 1);
   const int status = http.GET();
   const int expected = http.getSize();
   Serial.printf("[http] status=%d content_length=%d\n", status, expected);
   if (status != HTTP_CODE_OK || expected == 0 || expected > int(paperhub::kMaxPngBytes)) {
     Serial.printf("[http] status=%d received_bytes=0 result=rejected\n", status);
+    http.end();
+    return false;
+  }
+  if (http.header("X-Paper-View") != paperhub::viewQuery(target)) {
+    Serial.printf("[http] status=%d received_bytes=0 error=view_header_mismatch\n", status);
     http.end();
     return false;
   }
@@ -183,19 +192,30 @@ void sleepUntilNextUpdate() {
   const time_t now = time(nullptr);
   if (clockValid()) localtime_r(&now, &local);
   const unsigned seconds = paperhub::sleepSeconds(clockValid(), local.tm_hour);
-  // Do not enter an immediate wake loop if BtnA is still held down.
+  // Held buttons are excluded individually from this sleep's wake mask.
   const auto started = millis();
-  while (digitalRead(kButtonA) == LOW && millis() - started < 2000) delay(10);
-  bool buttonWake = digitalRead(kButtonA) != LOW;
-  if (buttonWake) {
-    rtc_gpio_pullup_en(kButtonA);
-    rtc_gpio_pulldown_dis(kButtonA);
-    buttonWake = esp_sleep_enable_ext0_wakeup(kButtonA, 0) == ESP_OK;
+  while ((digitalRead(kButtonA) == LOW || digitalRead(kButtonB) == LOW) &&
+         millis() - started < 2000) delay(10);
+  uint64_t mask = paperhub::releasedWakeMask(digitalRead(kButtonA) != LOW,
+                                            digitalRead(kButtonB) != LOW, kButtonA, kButtonB);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT0);
+  esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_EXT1);
+  // ext1 does not keep the RTC peripheral domain on automatically.
+  if (esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON) != ESP_OK) mask = 0;
+  for (const auto pin : {kButtonA, kButtonB}) {
+    if (!(mask & paperhub::pinBit(pin))) continue;
+    if (rtc_gpio_init(pin) != ESP_OK ||
+        rtc_gpio_set_direction(pin, RTC_GPIO_MODE_INPUT_ONLY) != ESP_OK ||
+        rtc_gpio_pullup_en(pin) != ESP_OK || rtc_gpio_pulldown_dis(pin) != ESP_OK) {
+      mask &= ~paperhub::pinBit(pin);
+    }
   }
-  Serial.printf("[sleep] seconds=%u button_a_wakeup=%d clock_valid=%d\n", seconds, buttonWake, clockValid());
+  if (mask && esp_sleep_enable_ext1_wakeup(mask, ESP_EXT1_WAKEUP_ANY_LOW) != ESP_OK) mask = 0;
+  Serial.printf("[sleep] seconds=%u button_a_wakeup=%d button_b_wakeup=%d clock_valid=%d\n",
+                seconds, bool(mask & paperhub::pinBit(kButtonA)), bool(mask & paperhub::pinBit(kButtonB)), clockValid());
   Serial.flush();
-  // The button wake source above is PaperDIY-specific; M5Unified's generic
-  // touch wake pin is not used. ESP32 RTC time survives this deep sleep.
+  // M5Unified 0.2.26 only changes ext0/ext1 when touch_wakeup is true.
+  // false preserves our two-button mask and RTC_PERIPH=ON setting.
   M5.Power.deepSleep(uint64_t(seconds) * 1000000ULL, false);
   Serial.println("[sleep] fallback=esp_deep_sleep_start");
   Serial.flush();
@@ -209,15 +229,28 @@ void setup() {
   const auto serialStarted = millis();
   while (!Serial && millis() - serialStarted < 1200) delay(10);
   const auto cause = esp_sleep_get_wakeup_cause();
-  const char* reason = cause == ESP_SLEEP_WAKEUP_TIMER ? "timer" :
-                       cause == ESP_SLEEP_WAKEUP_EXT0 ? "button_a" : "power_on_or_reset";
+  const bool resumed = esp_reset_reason() == ESP_RST_DEEPSLEEP &&
+                       (cause == ESP_SLEEP_WAKEUP_TIMER || cause == ESP_SLEEP_WAKEUP_EXT1);
+  if (!resumed) displayedView = 0;
+  const auto button = resumed && cause == ESP_SLEEP_WAKEUP_EXT1
+      ? paperhub::buttonFromWakeMask(esp_sleep_get_ext1_wakeup_status(), kButtonA, kButtonB)
+      : paperhub::Button::None;
+  const auto from = paperhub::sanitizeView(displayedView);
+  const auto target = paperhub::nextView(from, button);
+  const char* reason = !resumed ? "power_on_or_reset" :
+      button == paperhub::Button::Both ? "button_ab" :
+      button == paperhub::Button::B ? "button_b" :
+      button == paperhub::Button::A ? "button_a" : "timer";
   Serial.printf("[boot] reason=%s wakeup_cause=%d reset_reason=%d\n",
                 reason, int(cause), int(esp_reset_reason()));
   rtc_gpio_deinit(kButtonA);
+  rtc_gpio_deinit(kButtonB);
   auto cfg = M5.config();
   cfg.clear_display = false;
   cfg.serial_baudrate = 115200;
   M5.begin(cfg);
+  pinMode(kButtonA, INPUT_PULLUP);
+  pinMode(kButtonB, INPUT_PULLUP);
   M5.Display.setRotation(1);
   if (M5.Display.width() != paperhub::kWidth) M5.Display.setRotation(0);
   M5.Display.setAutoDisplay(false);
@@ -228,19 +261,21 @@ void setup() {
   bool ok = false;
   if (configured && connectWifi()) {
     syncClock();
-    ok = fetchAndDraw();
+    ok = fetchAndDraw(target);
   } else if (!configured) {
     Serial.println("[config] missing_required_setting");
     Serial.println("[wifi] skipped=missing_configuration");
   }
   Serial.printf("[fetch] result=%s\n", ok ? "ok" : "failed");
+  if (ok) displayedView = static_cast<uint8_t>(target);
+  Serial.printf("[view] from=%s to=%s result=%s\n", paperhub::viewQuery(from),
+                paperhub::viewQuery(target), ok ? "ok" : "kept");
   if (!ok) markFailure();
   sleepUntilNextUpdate();
 }
 
 void loop() {
-  // Normally unreachable; keep BtnA responsive if a platform sleep call returns.
-  M5.update();
-  if (M5.BtnA.wasPressed()) ESP.restart();
+  // Normally unreachable; retry sleeping if a platform call returns.
+  sleepUntilNextUpdate();
   delay(20);
 }

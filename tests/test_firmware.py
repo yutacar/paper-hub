@@ -82,3 +82,7 @@ def test_secrets_template_and_git_exclusion():
 ])
 def test_optional_clock_configuration(policy_binary, server, timezone, expected):
     assert subprocess.check_output([str(policy_binary), "config", server, timezone], text=True) == expected
+
+
+def test_button_view_transition_policy(policy_binary):
+    subprocess.run([str(policy_binary), "views"], check=True)
