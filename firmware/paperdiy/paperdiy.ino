@@ -13,7 +13,7 @@
 
 namespace {
 constexpr gpio_num_t kButtonA = GPIO_NUM_4;  // PaperDIY BtnA, active low.
-constexpr gpio_num_t kButtonB = GPIO_NUM_3;  // PaperDIY BtnB, active low; input only.
+constexpr gpio_num_t kButtonB = GPIO_NUM_3;  // PaperDIY BtnB, active low; used only as an input.
 RTC_DATA_ATTR uint8_t displayedView = 0;
 constexpr unsigned kWifiTimeoutMs = 10000;
 constexpr unsigned kNtpTimeoutMs = 5000;
@@ -225,16 +225,24 @@ void sleepUntilNextUpdate() {
 }  // namespace
 
 void setup() {
-  Serial.begin(115200);
-  const auto serialStarted = millis();
-  while (!Serial && millis() - serialStarted < 1200) delay(10);
   const auto cause = esp_sleep_get_wakeup_cause();
   const bool resumed = esp_reset_reason() == ESP_RST_DEEPSLEEP &&
                        (cause == ESP_SLEEP_WAKEUP_TIMER || cause == ESP_SLEEP_WAKEUP_EXT1);
   if (!resumed) displayedView = 0;
-  const auto button = resumed && cause == ESP_SLEEP_WAKEUP_EXT1
+  const auto wakeButton = resumed && cause == ESP_SLEEP_WAKEUP_EXT1
       ? paperhub::buttonFromWakeMask(esp_sleep_get_ext1_wakeup_status(), kButtonA, kButtonB)
       : paperhub::Button::None;
+  // Sample before the serial wait or M5.begin: a human chord may lag the
+  // first ext1 edge, while the recorded wake mask contains only that first pin.
+  rtc_gpio_deinit(kButtonA);
+  rtc_gpio_deinit(kButtonB);
+  pinMode(kButtonA, INPUT_PULLUP);
+  pinMode(kButtonB, INPUT_PULLUP);
+  const auto button = paperhub::resolveButton(wakeButton, digitalRead(kButtonA) == LOW,
+                                             digitalRead(kButtonB) == LOW);
+  Serial.begin(115200);
+  const auto serialStarted = millis();
+  while (!Serial && millis() - serialStarted < 1200) delay(10);
   const auto from = paperhub::sanitizeView(displayedView);
   const auto target = paperhub::nextView(from, button);
   const char* reason = !resumed ? "power_on_or_reset" :
@@ -243,8 +251,6 @@ void setup() {
       button == paperhub::Button::A ? "button_a" : "timer";
   Serial.printf("[boot] reason=%s wakeup_cause=%d reset_reason=%d\n",
                 reason, int(cause), int(esp_reset_reason()));
-  rtc_gpio_deinit(kButtonA);
-  rtc_gpio_deinit(kButtonB);
   auto cfg = M5.config();
   cfg.clear_display = false;
   cfg.serial_baudrate = 115200;

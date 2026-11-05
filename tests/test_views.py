@@ -1,4 +1,4 @@
-"""Offline API, lazy cache and display regression coverage for all views."""
+"""Offline API, validated cache and display regression coverage for all views."""
 import io
 
 import httpx
@@ -53,7 +53,7 @@ def test_api_modes_headers_validation_and_telemetry(settings):
         assert client.get("/healthz").json() == {"ok": True, "strata_age_s": None, "xangi_age_s": None}
 
 
-def test_lazy_cache_invalidation_and_shared_snapshot(settings, strata):
+def test_validated_cache_and_shared_snapshot(settings, strata):
     calls = []
     def renderer(view, config, mode="dashboard"):
         calls.append((mode, view))
@@ -62,7 +62,7 @@ def test_lazy_cache_invalidation_and_shared_snapshot(settings, strata):
                      transport=httpx.MockTransport(lambda request: httpx.Response(200, json=strata)))
     with TestClient(app) as client:
         runtime = app.state.runtime
-        assert not calls and runtime.pngs == {}
+        assert len(calls) == 3 and set(runtime.pngs) == set(MODES)
         for mode in MODES:
             first = client.get("/paper.png?view=" + mode).content
             assert first == client.get("/paper.png?view=" + mode).content
@@ -73,7 +73,7 @@ def test_lazy_cache_invalidation_and_shared_snapshot(settings, strata):
         assert client.get("/paper.json").json() == old_json
         assert len(calls) == 3
         assert client.portal.call(runtime.poll_once, "strata")
-        assert not runtime.pngs and len(calls) == 3  # Fetch never renders.
+        assert set(runtime.pngs) == set(MODES) and len(calls) == 6  # All views validated before publication.
         assert len(runtime.view["history"]) == 1
         for mode in MODES:
             client.get("/paper.png?view=" + mode)
@@ -170,3 +170,104 @@ def test_detail_inner_cards_clear_outer_bottom(settings, strata, usage, mode, mo
     inner = [box for box in boxes[1:] if box != footer]
     assert inner and outer[3] - max(box[3] for box in inner) >= 8
     assert footer[1] - outer[3] >= 8
+
+
+@pytest.mark.parametrize("previous_success", (False, True))
+def test_invalid_short_reset_rejected_before_data_and_history_commit(settings, usage, monkeypatch, previous_success):
+    from copy import deepcopy
+    monkeypatch.setattr("paperhub.runtime.RETRY_DELAY", 0)
+    broken = [not previous_success]
+    current = [NOW]
+    bad = deepcopy(usage)
+    bad["providers"][0]["groups"][0]["windows"][0]["resetsAt"] = 1.79e12
+    def handler(request):
+        return httpx.Response(200, json=bad if broken[0] else usage)
+    app = create_app(settings, transport=httpx.MockTransport(handler), polling=False, clock=lambda: current[0])
+    with TestClient(app) as client:
+        runtime = app.state.runtime
+        if previous_success:
+            assert client.portal.call(runtime.poll_once, "xangi")
+            current[0] += 300
+        old_data = runtime.data["xangi"]
+        count = client.portal.call(lambda: runtime.history.db.execute("SELECT COUNT(*) FROM usage").fetchone()[0])
+        successes = dict(runtime.successes)
+        broken[0] = True
+        assert not client.portal.call(runtime.poll_once, "xangi")
+        assert runtime.data["xangi"] is old_data and runtime.successes == successes
+        assert client.portal.call(lambda: runtime.history.db.execute("SELECT COUNT(*) FROM usage").fetchone()[0]) == count
+        assert "xangi" in runtime.failures
+        for mode in MODES:
+            response = client.get("/paper.png?view=" + mode)
+            assert response.status_code == 200
+            assert Image.open(io.BytesIO(response.content)).size == (960, 540)
+
+
+def test_detail_render_error_rolls_back_new_history_and_prefill(settings, strata, monkeypatch):
+    from copy import deepcopy
+    monkeypatch.setattr("paperhub.runtime.RETRY_DELAY", 0)
+    good = deepcopy(strata)
+    good["requests"][0].update(prompt_tokens=600, reused=0, prompt_ms=1000)
+    bad = deepcopy(good)
+    bad["engine"]["model"] = "bad detail"
+    bad["requests"][0].update(prompt_tokens=1200, time=NOW+1)
+    broken = [False]
+    def renderer(view, config, mode="dashboard"):
+        if mode == "strata" and view["strata"] and view["strata"]["model"] == "bad detail":
+            raise ValueError("detail rendering failed")
+        return render_png(view, config, mode=mode)
+    app = create_app(settings, transport=httpx.MockTransport(lambda request: httpx.Response(200, json=bad if broken[0] else good)),
+                     renderer=renderer, polling=False, clock=lambda: NOW)
+    with TestClient(app) as client:
+        runtime = app.state.runtime
+        assert client.portal.call(runtime.poll_once, "strata")
+        previous_prefill = client.portal.call(runtime.history.last_prefill)
+        assert previous_prefill["value"] == 600
+        broken[0] = True
+        assert not client.portal.call(runtime.poll_once, "strata")
+        assert runtime.data["strata"]["engine"]["model"] == good["engine"]["model"]
+        assert client.portal.call(runtime.history.last_prefill) == previous_prefill
+        assert client.portal.call(lambda: runtime.history.db.execute("SELECT COUNT(*) FROM strata").fetchone()[0]) == 1
+        assert len(runtime.view["history"]) == 1
+        assert all(client.get("/paper.png?view=" + mode).status_code == 200 for mode in MODES)
+
+
+def test_usage_overflow_omits_entire_tail_in_order(settings, strata, usage, monkeypatch):
+    from copy import deepcopy
+    view = make_view(settings, strata, usage)
+    base = deepcopy(view["usage"]["providers"][0]["groups"][0])
+    groups = []
+    for heading, count in (("first", 1), ("too large", 9), ("last small", 1)):
+        group = deepcopy(base)
+        group["display_heading"] = heading
+        group["windows"] = [deepcopy(base["windows"][0]) for _ in range(count)]
+        groups.append(group)
+    view["usage"]["providers"] = [{"id": "p", "groups": groups}]
+    view["usage"]["zero_providers"] = []
+    texts = []
+    original = Canvas.text
+    def text(self, x, y, value, **kwargs):
+        texts.append(str(value))
+        return original(self, x, y, value, **kwargs)
+    monkeypatch.setattr(Canvas, "text", text)
+    render_png(view, settings, mode="usage")
+    assert "first" in texts and "too large" not in texts and "last small" not in texts
+    assert "ほか2グループ" in texts
+
+
+def test_malformed_id_rejected_before_sql_binding_and_next_poll_recovers(settings, usage, monkeypatch):
+    from copy import deepcopy
+    monkeypatch.setattr("paperhub.runtime.RETRY_DELAY", 0)
+    bad = deepcopy(usage)
+    bad["providers"][0]["id"] = []
+    broken = [True]
+    app = create_app(settings, polling=False, clock=lambda: NOW,
+                     transport=httpx.MockTransport(lambda request: httpx.Response(200, json=bad if broken[0] else usage)))
+    with TestClient(app) as client:
+        runtime = app.state.runtime
+        assert not client.portal.call(runtime.poll_once, "xangi")
+        assert runtime.data["xangi"] is None
+        assert client.portal.call(lambda: runtime.history.db.execute("SELECT COUNT(*) FROM usage").fetchone()[0]) == 0
+        assert all(client.get("/paper.png?view=" + mode).status_code == 200 for mode in MODES)
+        broken[0] = False
+        assert client.portal.call(runtime.poll_once, "xangi")
+        assert runtime.data["xangi"] is not None

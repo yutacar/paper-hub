@@ -477,36 +477,36 @@ def draw_usage_detail(c, view):
         c.text(24, 125, "データなし", size=28)
         return
     y, omitted = 100, 0
-    for provider in u["providers"]:
-        for group in provider["groups"]:
-            if y + 32 + max(0, len(group["windows"]) - 1) * 36 > 425:
-                omitted += 1
-                continue
-            c.draw.rounded_rectangle((18, y - 26, 942, y + 7), radius=7, fill=85)
-            provider_icon(c, provider["id"], 30, y - 23)
-            c.text(68, y, group["display_heading"], size=26, bold=True, fill=255, width=858)
-            y += 32
-            for i, window in enumerate(group["windows"]):
-                fg = 255 if window["inverted"] else 34
-                if window["inverted"]:
-                    c.draw.rectangle((18, y - 26, 942, y + 7), fill=51)
-                c.text(30, y, window["label"], size=24, fill=fg, width=50)
-                x, by, width = 94, y - 18, 300
-                c.draw.rectangle((x, by, x + width, by + 16), outline=fg, width=2)
-                used = window["used_percent"]
-                if used is not None:
-                    fill = round((width - 4) * max(0, min(100, used)) / 100)
-                    if fill:
-                        c.draw.rectangle((x + 2, by + 2, x + 1 + fill, by + 14), fill=187 if window["inverted"] else 119)
-                if window["pace_percent"] is not None:
-                    px = x + round(width * window["pace_percent"] / 100)
-                    c.draw.line((px, by - 3, px, by + 19), fill=fg, width=3)
-                c.right(484, y, window["used_label"], size=26, fill=fg, width=78)
-                relative, absolute = detail_reset(view, provider["id"], group["id"], i, c.settings.tz)
-                c.text(508, y, relative, fill=fg, width=196)
-                c.text(724, y, absolute, fill=fg, width=202)
-                y += 36
-            y += 12
+    groups = [(provider, group) for provider in u["providers"] for group in provider["groups"]]
+    for index, (provider, group) in enumerate(groups):
+        if y + 32 + max(0, len(group["windows"]) - 1) * 36 > 425:
+            omitted = len(groups) - index
+            break
+        c.draw.rounded_rectangle((18, y - 26, 942, y + 7), radius=7, fill=85)
+        provider_icon(c, provider["id"], 30, y - 23)
+        c.text(68, y, group["display_heading"], size=26, bold=True, fill=255, width=858)
+        y += 32
+        for i, window in enumerate(group["windows"]):
+            fg = 255 if window["inverted"] else 34
+            if window["inverted"]:
+                c.draw.rectangle((18, y - 26, 942, y + 7), fill=51)
+            c.text(30, y, window["label"], size=24, fill=fg, width=50)
+            x, by, width = 94, y - 18, 300
+            c.draw.rectangle((x, by, x + width, by + 16), outline=fg, width=2)
+            used = window["used_percent"]
+            if used is not None:
+                fill = round((width - 4) * max(0, min(100, used)) / 100)
+                if fill:
+                    c.draw.rectangle((x + 2, by + 2, x + 1 + fill, by + 14), fill=187 if window["inverted"] else 119)
+            if window["pace_percent"] is not None:
+                px = x + round(width * window["pace_percent"] / 100)
+                c.draw.line((px, by - 3, px, by + 19), fill=fg, width=3)
+            c.right(484, y, window["used_label"], size=26, fill=fg, width=78)
+            relative, absolute = detail_reset(view, provider["id"], group["id"], i, c.settings.tz)
+            c.text(508, y, relative, fill=fg, width=196)
+            c.text(724, y, absolute, fill=fg, width=202)
+            y += 36
+        y += 12
     summary = zero_summary(u["zero_providers"], lambda text: c.draw.textlength(text, font=c.font(22)), width=912)
     if omitted:
         summary = f"ほか{omitted}グループ" + (" · " + summary if summary else "")

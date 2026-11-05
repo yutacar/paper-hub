@@ -2,7 +2,7 @@
 
 import json
 import sqlite3
-from contextlib import closing
+from contextlib import closing, nullcontext
 from pathlib import Path
 
 from .common import mapping, number
@@ -31,11 +31,12 @@ class History:
                 id INTEGER PRIMARY KEY CHECK (id = 1), payload TEXT NOT NULL);
         """)
 
-    def record_strata(self, payload, now):
+    def record_strata(self, payload, now, *, commit=True):
+        """Use commit=False only within a caller-owned database transaction."""
         hardware, live = mapping(payload.get("hardware")), mapping(payload.get("live"))
         row = (now, *(number(hardware.get(k)) for k in
                       ("gpu_util", "gpu_power", "cpu", "disk_read_mb")), number(live.get("tok_s")))
-        with self.db:
+        with self.db if commit else nullcontext():
             self.db.execute("INSERT INTO strata VALUES (?, ?, ?, ?, ?, ?)", row)
             sample = prefill_sample(payload)
             if sample is not None:
@@ -46,7 +47,8 @@ class History:
                         (excluded.request_at IS NOT NULL AND excluded.request_at >= prefill.request_at)
                 """, (sample["value"], sample["at"]))
 
-    def record_usage(self, payload, now):
+    def record_usage(self, payload, now, *, commit=True):
+        """Use commit=False only within a caller-owned database transaction."""
         rows = []
         for provider in payload.get("providers") or []:
             for group in provider.get("groups") or []:
@@ -54,7 +56,7 @@ class History:
                     rows.append((now, provider.get("id"), group.get("id"), window.get("label"),
                                  number(window.get("usedPercent")),
                                  number(window.get("windowDurationMins")), number(window.get("resetsAt"))))
-        with self.db:
+        with self.db if commit else nullcontext():
             self.db.executemany("INSERT INTO usage VALUES (?, ?, ?, ?, ?, ?, ?)", rows)
 
     def recent(self, now):

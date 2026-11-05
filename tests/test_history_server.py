@@ -21,7 +21,7 @@ def settings(tmp_path):
                     strata_url="http://127.0.0.1/metrics", usage_url="http://127.0.0.1/api/usage")
 
 
-def cheap_renderer(view, settings):
+def cheap_renderer(view, settings, mode="dashboard"):
     return str(view["updated_at"]).encode()
 
 
@@ -100,7 +100,7 @@ def test_bad_json_retains_previous(settings, tmp_path, strata):
 
 def test_api_cache_telemetry_and_read_only(settings):
     calls = []
-    def renderer(view, config):
+    def renderer(view, config, mode="dashboard"):
         calls.append(view)
         return b"cached-png"
     app = create_app(settings, renderer=renderer, polling=False, clock=lambda: 1000)
@@ -108,7 +108,7 @@ def test_api_cache_telemetry_and_read_only(settings):
         initial = client.get("/paper.json").json()
         for _ in range(3):
             assert client.get("/paper.png").content == b"cached-png"
-        assert len(calls) == 1
+        assert len(calls) == 3
         assert client.get("/paper.png?bat=70&rssi=-60").headers["content-type"] == "image/png"
         assert client.get("/paper.json").json() == initial
         client.portal.call(app.state.runtime.refresh)

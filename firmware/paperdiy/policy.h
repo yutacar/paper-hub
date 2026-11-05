@@ -21,6 +21,14 @@ inline Button buttonFromWakeMask(std::uint64_t mask, int pinA, int pinB) {
   return a ? (b ? Button::Both : Button::A) : (b ? Button::B : Button::None);
 }
 
+// Keep the latched wake source; promote a chord if the other input is now low.
+// Ignore button levels on timer/cold boots, which have no button wake source.
+inline Button resolveButton(Button wake, bool aPressed, bool bPressed) {
+  if (wake == Button::None || wake == Button::Both) return wake;
+  if ((wake == Button::A && bPressed) || (wake == Button::B && aPressed)) return Button::Both;
+  return wake;
+}
+
 inline View sanitizeView(std::uint8_t raw) {
   return raw <= 2 ? static_cast<View>(raw) : View::Dashboard;
 }

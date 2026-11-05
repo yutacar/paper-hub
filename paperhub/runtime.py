@@ -32,15 +32,18 @@ class Runtime:
                         successes=self.successes, failures=self.failures,
                         history=self.history.recent(now), telemetry=self.telemetry,
                         last_prefill=self.history.last_prefill())
-        self.view = view
-        self.pngs.clear()
+        pngs = self.render_all(view)
+        self.view, self.pngs = view, pngs
+
+    def render_all(self, view):
+        # Publish a complete generation only after every view renders.
+        return {mode: (self.renderer(view, self.settings) if mode == "dashboard" else
+                       self.renderer(view, self.settings, mode=mode))
+                for mode in ("dashboard", "strata", "usage")}
 
     def get_png(self, mode="dashboard"):
         if mode not in ("dashboard", "strata", "usage"):
             raise ValueError("Unknown paper view")
-        if mode not in self.pngs:
-            self.pngs[mode] = (self.renderer(self.view, self.settings) if mode == "dashboard" else
-                               self.renderer(self.view, self.settings, mode=mode))
         return self.pngs[mode]
 
     async def poll_once(self, name):
@@ -60,11 +63,25 @@ class Runtime:
                 next_data = {**self.data, name: payload}
                 next_successes = {**self.successes, name: now}
                 next_failures = {key: value for key, value in self.failures.items() if key != name}
+                # Preserve display-field validation before SQLite binds IDs/labels.
                 snapshot(self.settings, now=now, strata=next_data["strata"], usage=next_data["xangi"],
-                                     successes=next_successes, failures=next_failures,
-                                     history=self.history.recent(now), telemetry=self.telemetry,
-                                     last_prefill=self.history.last_prefill())
-            except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError, AttributeError, OverflowError) as exc:
+                         successes=next_successes, failures=next_failures,
+                         history=self.history.recent(now), telemetry=self.telemetry,
+                         last_prefill=self.history.last_prefill())
+                # Stage history and Prefill in one transaction so the preview
+                # uses exactly the history that will be published with its PNGs.
+                # No await occurs until this transaction has committed/rolled back.
+                with self.history.db:
+                    if name == "strata":
+                        self.history.record_strata(payload, now, commit=False)
+                    else:
+                        self.history.record_usage(payload, now, commit=False)
+                    candidate = snapshot(self.settings, now=now, strata=next_data["strata"], usage=next_data["xangi"],
+                                         successes=next_successes, failures=next_failures,
+                                         history=self.history.recent(now), telemetry=self.telemetry,
+                                         last_prefill=self.history.last_prefill())
+                    pngs = self.render_all(candidate)
+            except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError, AttributeError, OverflowError, OSError) as exc:
                 status = response.status_code if response is not None else None
                 prefix = response.text[:200] if response is not None else ""
                 log.warning("%s fetch failed attempt=%d/2 exception=%s message=%r status=%s response_prefix=%r",
@@ -75,14 +92,8 @@ class Runtime:
                 self.failures[name] = self.clock()
                 self.refresh()
                 return False
-            if name == "strata":
-                self.history.record_strata(payload, now)
-            else:
-                self.history.record_usage(payload, now)
-            self.data[name] = payload
-            self.successes[name] = now
-            self.failures.pop(name, None)
-            self.refresh()
+            self.data, self.successes, self.failures = next_data, next_successes, next_failures
+            self.view, self.pngs = candidate, pngs
             return True
 
     async def poll(self, name):
