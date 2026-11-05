@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 ALLOWED_IPS = {"127.0.0.1", "0.0.0.0", "::1", "::"}
 PUBLIC_HOSTS = {"github.com", "docs.github.com", "docs.m5stack.com", "docs.espressif.com",
                 "static-cdn.m5stack.com", "raw.githubusercontent.com", "api.github.com"}
-ALLOWED_BINARY_PATHS = {"docs/images/sample.png"}
+ALLOWED_BINARY_PATHS = {"docs/images/sample.png", "docs/images/sample-strata.png", "docs/images/sample-usage.png"}
 PATTERNS = {
     "home_path": re.compile(r"/(?:Users|home)/[^\s/]+|[A-Za-z]:\\Users\\[^\s\\]+"),
     "private_network_name": re.compile(r"\b[\w-]+\.(?:local|lan|internal|home|ts\.net)\b", re.I),

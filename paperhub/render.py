@@ -393,21 +393,21 @@ def draw_strata_detail(c, view):
         return
     c.text(20, 68, s["model"], width=680)
     c.right(940, 68, "● " + s["state"], size=24, width=220)
-    panel(c, (12, 80, 460, 201))
+    panel(c, (12, 80, 460, 199))
     c.text(28, 108, "Decode", size=26, bold=True)
     maximum = spark_summary(s["decode_history"])
     c.right(446, 108, "max " + maximum + (" t/s" if maximum not in ("idle", "—") else ""), width=260)
     end = c.text(28, 164, s["decode_tok_s"], size=64, bold=True, width=310)
     c.text(end, 164, " t/s", size=26, width=80)
     c.bars(28, 173, s["decode_history"], width=418, height=20)
-    panel(c, (468, 80, 704, 201))
+    panel(c, (468, 80, 704, 199))
     c.text(484, 108, "Prefill", size=26, bold=True)
     value = s["prefill_tok_s"]
     c.text(484, 160, value + (" t/s" if value != "—" else ""),
            size=24 if value == "—" else 32, bold=True, width=204)
     if s.get("prefill_cached"):
         c.text(484, 191, "履歴 " + s["prefill_date"], width=204)
-    panel(c, (712, 80, 948, 201))
+    panel(c, (712, 80, 948, 199))
     c.text(728, 108, "Context", size=26, bold=True)
     ctx = s.get("context_value")
     percent = ctx["percent"] if ctx else None
@@ -416,33 +416,33 @@ def draw_strata_detail(c, view):
     detail_bar(c, 728, 188, 204, percent)
     hardware = view.get("details", {}).get("hardware", {})
     for x, label, key, prefix in ((12, "VRAM", "vram", "gpu_mem"), (328, "RAM", "ram", "ram")):
-        panel(c, (x, 211, x + 308, 281))
-        c.text(x + 16, 239, label, size=24, bold=True)
-        c.right(x + 292, 265, compact_memory(s[key]), size=26, width=276)
+        panel(c, (x, 207, x + 308, 277))
+        c.text(x + 16, 230, label, size=22, bold=True)
+        c.right(x + 292, 262, compact_memory(s[key]), size=24, width=276)
         used, total = number(hardware.get(prefix + "_used")), number(hardware.get(prefix + "_total"))
         ratio = used / total * 100 if used is not None and total is not None and total > 0 else None
-        detail_bar(c, x + 16, 271, 276, ratio, height=6)
-    panel(c, (644, 211, 948, 281))
-    c.text(660, 239, "キャッシュ再利用", size=24, bold=True, width=224)
-    c.text(660, 272, s["cache_reuse"], size=34, bold=True, width=160)
+        detail_bar(c, x + 16, 267, 276, ratio, height=6)
+    panel(c, (644, 207, 948, 277))
+    c.text(660, 235, "キャッシュ再利用", size=24, bold=True, width=224)
+    c.text(660, 268, s["cache_reuse"], size=34, bold=True, width=160)
     ratio = number(s["cache_reuse_ratio"])
-    c.draw.ellipse((882, 221, 932, 271), outline=102, width=2)
+    c.draw.ellipse((882, 217, 932, 267), outline=102, width=2)
     if ratio is not None:
-        c.draw.arc((882, 221, 932, 271), -90, -90 + max(0, min(1, ratio)) * 360, fill=85, width=9)
-    panel(c, (12, 291, 636, 351))
-    c.text(28, 318, f"GPU {s['gpu_util']}%   {s['gpu_temp']}°C   {s['power']}", size=24, width=592)
+        c.draw.arc((882, 217, 932, 267), -90, -90 + max(0, min(1, ratio)) * 360, fill=85, width=9)
+    panel(c, (12, 285, 636, 345))
+    c.text(28, 312, f"GPU {s['gpu_util']}%   {s['gpu_temp']}°C   {s['power']}", size=24, width=592)
     samples = [row.get("gpu_power") for row in view["history"]]
-    c.spark(28, 325, samples, width=350, height=18)
-    c.right(620, 344, "電力 max " + spark_summary(samples) + " W", width=230)
-    panel(c, (644, 291, 948, 351))
-    c.text(660, 317, "CPU " + s["cpu"] + "%", width=272)
-    c.text(660, 343, s["pcie"], width=136)
-    c.right(932, 343, "experts " + s["experts_cached"], width=162)
-    panel(c, (12, 361, 948, 479))
-    c.text(28, 386, "直近リクエスト", size=24, bold=True)
+    c.spark(28, 319, samples, width=350, height=18)
+    c.right(620, 338, "電力 max " + spark_summary(samples) + " W", width=230)
+    panel(c, (644, 285, 948, 345))
+    c.text(660, 308, "CPU " + s["cpu"] + "%", width=272)
+    c.text(660, 337, s["pcie"], width=136)
+    c.right(932, 337, "experts " + s["experts_cached"], width=162)
+    panel(c, (12, 353, 948, 471))
+    c.text(28, 378, "直近リクエスト", size=24, bold=True)
     stamps = view.get("details", {}).get("request_times", [])
     for i, request in enumerate(s["recent_requests"][:3]):
-        y = 415 + i * 29
+        y = 407 + i * 29
         stamp = stamps[i] if i < len(stamps) else None
         label = datetime.fromtimestamp(stamp, ZoneInfo(c.settings.tz)).strftime("%m/%d %H:%M") if stamp is not None else request["time"]
         c.text(28, y, label, width=164)
@@ -470,7 +470,7 @@ def detail_reset(view, provider, group, index, tz):
 
 def draw_usage_detail(c, view):
     detail_header(c, view, "AI利用量 詳細", "xangi")
-    panel(c, (12, 68, 948, 479))
+    panel(c, (12, 68, 948, 471))
     detail_footer(c, view, "usage")
     u = view["usage"]
     if u is None:
@@ -511,7 +511,7 @@ def draw_usage_detail(c, view):
     if omitted:
         summary = f"ほか{omitted}グループ" + (" · " + summary if summary else "")
     if summary:
-        c.text(24, 468, summary, width=912)
+        c.text(24, 463, summary, width=912)
 
 
 def render_png(view, settings, mode="dashboard"):

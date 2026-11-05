@@ -8,7 +8,7 @@
 - `.env` と `firmware/paperdiy/secrets.h` は管理対象外です。両サンプルの代入値は空欄で、コメントにはプレースホルダー・既定値・公開NTPサービスの例だけを記載しています。
 - Gitのauthor/committerメールはGitHubのnoreply形式です。GitHub表示名・アカウントに結び付くnoreply IDは履歴に残ります。
 - fixtureにはメトリクス・時刻・プラン・モデル名・ハードウェア型番が含まれます。直接の連絡先や接続先はありません。
-- 公開サンプル画像 `docs/images/sample.png` はfixtureだけから生成した画像です。この1ファイルだけをバイナリの許可対象とし、その他の画像・バイナリは要レビューとして検出します。
+- 公開サンプル画像 `docs/images/sample.png`、`docs/images/sample-strata.png`、`docs/images/sample-usage.png` はfixtureだけから生成した画像です。この3ファイルだけをバイナリの許可対象とし、その他の画像・バイナリは要レビューとして検出します。
 
 ## 再実行
 

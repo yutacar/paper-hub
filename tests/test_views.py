@@ -1,6 +1,5 @@
 """Offline API, lazy cache and display regression coverage for all views."""
 import io
-from copy import deepcopy
 
 import httpx
 import pytest
@@ -155,3 +154,19 @@ def test_cli_modes(settings, monkeypatch, tmp_path, mode):
     main(["--strata", str(fixtures / "strata_monitor.json"), "--usage", str(fixtures / "xangi_usage.json"),
           "--now", str(NOW), "--out", str(output), "--view", mode])
     assert Image.open(output).size == (960, 540)
+
+
+@pytest.mark.parametrize("mode", ("strata", "usage"))
+def test_detail_inner_cards_clear_outer_bottom(settings, strata, usage, mode, monkeypatch):
+    import paperhub.render as renderer
+    boxes = []
+    original = renderer.panel
+    def panel(canvas, box, **kwargs):
+        boxes.append(box)
+        return original(canvas, box, **kwargs)
+    monkeypatch.setattr(renderer, "panel", panel)
+    render_png(make_view(settings, strata, usage), settings, mode=mode)
+    outer, footer = boxes[0], next(box for box in boxes if box[1] == 487)
+    inner = [box for box in boxes[1:] if box != footer]
+    assert inner and outer[3] - max(box[3] for box in inner) >= 8
+    assert footer[1] - outer[3] >= 8

@@ -4,6 +4,8 @@ Strataのローカル推論メトリクスとxangiのAI利用量を、M5Stack Pa
 
 ![fixtureから生成したダッシュボード](docs/images/sample.png)
 
+[Strata詳細](docs/images/sample-strata.png) / [AI利用量詳細](docs/images/sample-usage.png)（同じfixtureから生成）
+
 ```text
 Strata /metrics ─┐
                 ├─ paper-hub（Raspberry Pi）─ /paper.png ─ PaperDIY
@@ -15,7 +17,7 @@ xangi /api/usage ┘
 - Strata・xangiを独立して取得し、前回値の保持、1回のリトライ、取得失敗・オフラインを表示。
 - カード形式で使用率とペース、直近リクエスト、decode棒グラフ、電力スパークライン、再利用率リングを描画。
 - SQLite履歴と最後の有効Prefillを保存し、PNGをメモリにキャッシュ。
-- PaperDIYでPSRAMへ受信・検証し、タイマーまたはBtnAで更新。
+- PaperDIYでPSRAMへ受信・検証。Bでダッシュボード→Strata詳細→AI利用量詳細を巡回、A・タイマーで現在の画面を更新、A+Bでダッシュボードへ戻す。
 
 開発はmacOS、サーバ実行はPython 3.11以上のRaspberry Pi OS 64bitを想定しています。ライセンスは[MIT](LICENSE)です。
 
@@ -28,6 +30,8 @@ xangi /api/usage ┘
 - 日本語フォントとWi-Fiネットワーク。
 
 対応確認したバージョンは、Strata **0.1.54**（fixtureの `engine.version`）、xangi **v0.61.1**です。ファームウェアのボード・ライブラリの組み合わせは[専用手順](docs/firmware.md)に記載しています。
+
+3画面対応は[サーバを先にデプロイ](docs/deployment.md)してからファームウェアを書き込んでください。
 
 ## 最初に動かす
 
@@ -85,4 +89,5 @@ PNG生成はネットワークを使いません。テストも依存導入後�
 - Raspberry Pi 5での常駐、Macからのdeployを確認済み。
 - PaperDIYへのUSB書き込み、実機でのダッシュボード表示、電池残量表示を確認済み。
 - カード形式の新レイアウトはfixture画像・自動テスト・PaperDIY実機で表示を確認済み。
-- 未検証: 電池持続時間の長期計測。
+- 3画面対応はPython・C++ホストテスト、fixture画像、PaperDIY向けビルドを確認済み。ボタンBの巡回・同時押し・詳細画面の維持・失敗復帰は[実機チェックリスト](docs/firmware.md)で確認してください。
+- 未検証: 上記の3画面切替の実機動作、電池持続時間の長期計測。
