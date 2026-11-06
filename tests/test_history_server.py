@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 
 import httpx
 import pytest
@@ -79,6 +80,38 @@ def test_independent_failure_recovery_and_offline(settings, tmp_path, strata, us
             assert "strata" not in runtime.failures
             assert runtime.view["status"]["strata"] == ""
         history.close()
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("api_key", ["", "fixture-strata-key"])
+def test_strata_authentication(settings, tmp_path, strata, usage, caplog, api_key):
+    async def scenario():
+        requests = []
+
+        def handler(request):
+            requests.append((request.url.path, request.headers.get("Authorization")))
+            if request.url.path == "/metrics":
+                if api_key and len(requests) == 1:
+                    return httpx.Response(401, text=f"Rejected: {api_key}")
+                return httpx.Response(200, json=strata)
+            return httpx.Response(200, json=usage)
+
+        store = History(tmp_path / "auth.db")
+        config = replace(settings, strata_api_key=api_key)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
+            runtime = Runtime(config, store, client, renderer=cheap_renderer)
+            assert await runtime.poll_once("strata")
+            assert await runtime.poll_once("xangi")
+        store.close()
+
+        if api_key:
+            assert requests == [("/metrics", f"Bearer {api_key}")] * 2 + [("/api/usage", None)]
+            assert "status=401" in caplog.text
+            assert "Rejected: [redacted]" in caplog.text
+            assert api_key not in caplog.text
+        else:
+            assert requests == [("/metrics", None), ("/api/usage", None)]
+
     asyncio.run(scenario())
 
 

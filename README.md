@@ -25,7 +25,7 @@ xangi /api/usage ┘
 
 - M5Stack PaperDIYとUSBデータケーブル。
 - Raspberry Pi（実機確認はRaspberry Pi 5）、またはLinux/macOSでPython 3.11以上を実行できる環境。
-- [Strata](https://github.com/Niko1221/Strata): `/metrics` を利用。
+- [Strata](https://github.com/Niko1221/Strata) の `/metrics` を利用します。認証を有効にしている場合は `STRATA_API_KEY` を設定します。
 - [xangi](https://github.com/karaage0703/xangi): `/api/usage` を利用。
 - 日本語フォントとWi-Fiネットワーク。
 

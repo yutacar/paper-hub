@@ -55,6 +55,9 @@
 STRATA_MONITOR_URL=
 XANGI_USAGE_URL=
 
+# Strata の認証（任意）
+STRATA_API_KEY=
+
 # サーバ
 HOST=
 PORT=
@@ -76,6 +79,7 @@ DEPLOY_DIR=
 
 - 設定サンプルの各項目には、値を伏せた書き方の例と既定値をコメントで示す。代入行は空欄にする。
 - 必須値（`STRATA_MONITOR_URL`、`XANGI_USAGE_URL`、`FONT_PATH`）が未設定なら、起動時に分かりやすいエラーで終了する。
+- `STRATA_API_KEY` が設定されていれば、Strata の取得時だけ `Authorization: Bearer` ヘッダーを送る。空欄の場合は認証ヘッダーを送らない。取得失敗ログに含まれるキーは伏せる。
 - `FONT_PATH_BOLD` が未設定なら `FONT_PATH` を使う。
 
 ### ポーリング

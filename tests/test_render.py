@@ -49,6 +49,12 @@ def test_settings_validation(monkeypatch):
               "XANGI_USAGE_URL": "http://127.0.0.1/api/usage"}
     result = Settings.load(values=values)
     assert result.font_path_bold == result.font_path
+    assert result.strata_api_key == ""
+    keyed = Settings.load(values={**values, "STRATA_API_KEY": " fixture-strata-key "})
+    assert keyed.strata_api_key == "fixture-strata-key"
+    assert "fixture-strata-key" not in repr(keyed)
+    with pytest.raises(ValueError, match="STRATA_API_KEY"):
+        Settings.load(values={**values, "STRATA_API_KEY": "invalid\nkey"})
     for key, value, message in (("TZ", "invalid", "TZ"), ("PORT", "0", "PORT"),
                                 ("STRATA_MONITOR_URL", "bad", "STRATA_MONITOR_URL")):
         with pytest.raises(ValueError, match=message):

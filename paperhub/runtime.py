@@ -48,12 +48,14 @@ class Runtime:
 
     async def poll_once(self, name):
         url = self.settings.strata_url if name == "strata" else self.settings.usage_url
+        api_key = self.settings.strata_api_key if name == "strata" else ""
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
         for attempt in range(2):
             response = None
             try:
                 # Each attempt has its own total three-second deadline.
                 async with asyncio.timeout(3):
-                    response = await self.client.get(url, timeout=3)
+                    response = await self.client.get(url, headers=headers, timeout=3)
                     response.raise_for_status()
                     payload = response.json()
                 if not isinstance(payload, Mapping):
@@ -83,9 +85,13 @@ class Runtime:
                     pngs = self.render_all(candidate)
             except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError, AttributeError, OverflowError, OSError) as exc:
                 status = response.status_code if response is not None else None
-                prefix = response.text[:200] if response is not None else ""
+                message = str(exc)
+                body = response.text if response is not None else ""
+                if api_key:
+                    message = message.replace(api_key, "[redacted]")
+                    body = body.replace(api_key, "[redacted]")
                 log.warning("%s fetch failed attempt=%d/2 exception=%s message=%r status=%s response_prefix=%r",
-                            name, attempt + 1, type(exc).__name__, str(exc), status, prefix)
+                            name, attempt + 1, type(exc).__name__, message, status, body[:200])
                 if attempt == 0:
                     await asyncio.sleep(RETRY_DELAY)
                     continue
