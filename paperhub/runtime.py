@@ -85,14 +85,17 @@ class Runtime:
                     pngs = self.render_all(candidate)
             except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError, AttributeError, OverflowError, OSError) as exc:
                 status = response.status_code if response is not None else None
+                auth_rejected = name == "strata" and status in (401, 403)
                 message = str(exc)
                 body = response.text if response is not None else ""
                 if api_key:
                     message = message.replace(api_key, "[redacted]")
                     body = body.replace(api_key, "[redacted]")
+                if auth_rejected:
+                    message += " (Strata authentication/access rejected; check STRATA_API_KEY and access settings)"
                 log.warning("%s fetch failed attempt=%d/2 exception=%s message=%r status=%s response_prefix=%r",
                             name, attempt + 1, type(exc).__name__, message, status, body[:200])
-                if attempt == 0:
+                if attempt == 0 and not auth_rejected:
                     await asyncio.sleep(RETRY_DELAY)
                     continue
                 self.failures[name] = self.clock()

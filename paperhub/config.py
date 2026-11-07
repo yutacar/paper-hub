@@ -1,6 +1,7 @@
 """Configuration loading at application entry points only."""
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -44,8 +45,8 @@ class Settings:
             if not valid:
                 raise ValueError(key + " は有効なHTTP(S) URLを指定してください")
         strata_api_key = get("STRATA_API_KEY").strip() if server else ""
-        if any(not 33 <= ord(char) <= 126 for char in strata_api_key):
-            raise ValueError("STRATA_API_KEY は空白を含まないASCII文字列を指定してください")
+        if not re.fullmatch(r"[A-Za-z0-9._~+/=-]*", strata_api_key):
+            raise ValueError("STRATA_API_KEY に使用できる文字は ASCII 英数字と -._~+/= です")
         try:
             port = int(get("PORT", "8090"))
             if not 1 <= port <= 65535:

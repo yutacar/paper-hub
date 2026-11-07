@@ -83,16 +83,19 @@ def test_independent_failure_recovery_and_offline(settings, tmp_path, strata, us
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("api_key", ["", "fixture-strata-key"])
-def test_strata_authentication(settings, tmp_path, strata, usage, caplog, api_key):
+@pytest.mark.parametrize(("api_key", "failure_status"), [
+    ("", None), ("fixture-strata-key", 503),
+    ("fixture-strata-key", 401), ("fixture-strata-key", 403),
+])
+def test_strata_authentication(settings, tmp_path, strata, usage, caplog, api_key, failure_status):
     async def scenario():
         requests = []
 
         def handler(request):
             requests.append((request.url.path, request.headers.get("Authorization")))
             if request.url.path == "/metrics":
-                if api_key and len(requests) == 1:
-                    return httpx.Response(401, text=f"Rejected: {api_key}")
+                if failure_status and len(requests) == 1:
+                    return httpx.Response(failure_status, json={"message": f"Rejected: {api_key}"})
                 return httpx.Response(200, json=strata)
             return httpx.Response(200, json=usage)
 
@@ -100,17 +103,20 @@ def test_strata_authentication(settings, tmp_path, strata, usage, caplog, api_ke
         config = replace(settings, strata_api_key=api_key)
         async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as client:
             runtime = Runtime(config, store, client, renderer=cheap_renderer)
-            assert await runtime.poll_once("strata")
+            auth_rejected = failure_status in (401, 403)
+            assert await runtime.poll_once("strata") is not auth_rejected
+            assert ("strata" in runtime.failures) == auth_rejected
             assert await runtime.poll_once("xangi")
         store.close()
 
-        if api_key:
-            assert requests == [("/metrics", f"Bearer {api_key}")] * 2 + [("/api/usage", None)]
-            assert "status=401" in caplog.text
+        expected_header = f"Bearer {api_key}" if api_key else None
+        expected_attempts = 2 if failure_status == 503 else 1
+        assert requests == [("/metrics", expected_header)] * expected_attempts + [("/api/usage", None)]
+        if failure_status:
+            assert f"status={failure_status}" in caplog.text
             assert "Rejected: [redacted]" in caplog.text
             assert api_key not in caplog.text
-        else:
-            assert requests == [("/metrics", None), ("/api/usage", None)]
+        assert ("check STRATA_API_KEY" in caplog.text) == auth_rejected
 
     asyncio.run(scenario())
 

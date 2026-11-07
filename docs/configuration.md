@@ -9,7 +9,9 @@ cp .env.sample .env
 利用環境の値は `.env` に記入してください。`.env.sample` は公開用のため全項目が空欄です。`.env`、実行環境、データ、生成物、ファームウェアの秘密情報は Git 管理対象外です。
 
 - `STRATA_MONITOR_URL`、`XANGI_USAGE_URL`: 取得元。
-- `STRATA_API_KEY` は任意です。Strata で認証を有効にしている場合は、paper-hub を実行する側の `.env` に同じキーを設定します。キーは Strata の取得時だけ Bearer ヘッダーで送信します。
+- `STRATA_API_KEY` は任意です。Strata で認証を有効にしている場合は、paper-hub を実行する側の `.env` に同じキーを設定します。キーは Strata の取得時だけ Bearer ヘッダーで送信します。値は ASCII 英数字と `-._~+/=` で構成し、引用符・エスケープなしで記入してください。起動時に前後の空白を除き、許可外の文字が残る場合はエラーになります。
+
+API キーを使う場合は、`STRATA_MONITOR_URL` に HTTPS のエンドポイントを設定してください。HTTP では LAN 内でもキーが平文で送られます。Strata が HTTP で待ち受ける構成では、HTTPS のリバースプロキシや暗号化トンネルで通信経路を保護できます。
 - `HOST`、`PORT`、`TZ`、`DATA_DIR`: サーバと保存先。`TZ` は IANA タイムゾーン名です。
 - `FONT_PATH`、`FONT_PATH_BOLD`: フォント。通常フォントは必須で、太字の省略時は通常フォントを使います。読めないフォントは起動時にエラーになります。
 - `USAGE_ORDER`: プロバイダIDのカンマ区切り。
