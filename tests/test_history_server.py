@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import replace
 
 import httpx
@@ -85,7 +86,7 @@ def test_independent_failure_recovery_and_offline(settings, tmp_path, strata, us
 
 @pytest.mark.parametrize(("api_key", "failure_status"), [
     ("", None), ("fixture-strata-key", 503),
-    ("fixture-strata-key", 401), ("fixture-strata-key", 403),
+    ("fixture-strata-key", 401), ("fixture/strata/key", 403),
 ])
 def test_strata_authentication(settings, tmp_path, strata, usage, caplog, api_key, failure_status):
     async def scenario():
@@ -95,7 +96,9 @@ def test_strata_authentication(settings, tmp_path, strata, usage, caplog, api_ke
             requests.append((request.url.path, request.headers.get("Authorization")))
             if request.url.path == "/metrics":
                 if failure_status and len(requests) == 1:
-                    return httpx.Response(failure_status, json={"message": f"Rejected: {api_key}"})
+                    body = json.dumps({"message": f"Rejected: {api_key}"})
+                    body = body.replace("/", r"\/", 1)
+                    return httpx.Response(failure_status, text=body, headers={"Content-Type": "application/json"})
                 return httpx.Response(200, json=strata)
             return httpx.Response(200, json=usage)
 
@@ -114,6 +117,7 @@ def test_strata_authentication(settings, tmp_path, strata, usage, caplog, api_ke
         assert requests == [("/metrics", expected_header)] * expected_attempts + [("/api/usage", None)]
         if failure_status:
             assert f"status={failure_status}" in caplog.text
+            assert "attempt=1 exception=" in caplog.text
             assert "Rejected: [redacted]" in caplog.text
             assert api_key not in caplog.text
         assert ("check STRATA_API_KEY" in caplog.text) == auth_rejected

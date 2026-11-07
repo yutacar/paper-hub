@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Mapping
 
@@ -89,11 +90,13 @@ class Runtime:
                 message = str(exc)
                 body = response.text if response is not None else ""
                 if api_key:
-                    message = message.replace(api_key, "[redacted]")
-                    body = body.replace(api_key, "[redacted]")
+                    # JSON permits escaping each slash independently.
+                    key_pattern = re.compile(r"(?:\\/|/)".join(map(re.escape, api_key.split("/"))))
+                    message = key_pattern.sub("[redacted]", message)
+                    body = key_pattern.sub("[redacted]", body)
                 if auth_rejected:
                     message += " (Strata authentication/access rejected; check STRATA_API_KEY and access settings)"
-                log.warning("%s fetch failed attempt=%d/2 exception=%s message=%r status=%s response_prefix=%r",
+                log.warning("%s fetch failed attempt=%d exception=%s message=%r status=%s response_prefix=%r",
                             name, attempt + 1, type(exc).__name__, message, status, body[:200])
                 if attempt == 0 and not auth_rejected:
                     await asyncio.sleep(RETRY_DELAY)
