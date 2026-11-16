@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import re
 import time
 from collections.abc import Mapping
 
@@ -48,12 +49,14 @@ class Runtime:
 
     async def poll_once(self, name):
         url = self.settings.strata_url if name == "strata" else self.settings.usage_url
+        api_key = self.settings.strata_api_key if name == "strata" else ""
+        headers = {"Authorization": f"Bearer {api_key}"} if api_key else None
         for attempt in range(2):
             response = None
             try:
                 # Each attempt has its own total three-second deadline.
                 async with asyncio.timeout(3):
-                    response = await self.client.get(url, timeout=3)
+                    response = await self.client.get(url, headers=headers, timeout=3)
                     response.raise_for_status()
                     payload = response.json()
                 if not isinstance(payload, Mapping):
@@ -83,10 +86,19 @@ class Runtime:
                     pngs = self.render_all(candidate)
             except (httpx.HTTPError, TimeoutError, ValueError, TypeError, KeyError, AttributeError, OverflowError, OSError) as exc:
                 status = response.status_code if response is not None else None
-                prefix = response.text[:200] if response is not None else ""
-                log.warning("%s fetch failed attempt=%d/2 exception=%s message=%r status=%s response_prefix=%r",
-                            name, attempt + 1, type(exc).__name__, str(exc), status, prefix)
-                if attempt == 0:
+                auth_rejected = name == "strata" and status in (401, 403)
+                message = str(exc)
+                body = response.text if response is not None else ""
+                if api_key:
+                    # JSON permits escaping each slash independently.
+                    key_pattern = re.compile(r"(?:\\/|/)".join(map(re.escape, api_key.split("/"))))
+                    message = key_pattern.sub("[redacted]", message)
+                    body = key_pattern.sub("[redacted]", body)
+                if auth_rejected:
+                    message += " (Strata authentication/access rejected; check STRATA_API_KEY and access settings)"
+                log.warning("%s fetch failed attempt=%d exception=%s message=%r status=%s response_prefix=%r",
+                            name, attempt + 1, type(exc).__name__, message, status, body[:200])
+                if attempt == 0 and not auth_rejected:
                     await asyncio.sleep(RETRY_DELAY)
                     continue
                 self.failures[name] = self.clock()

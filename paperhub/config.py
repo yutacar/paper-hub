@@ -1,7 +1,8 @@
 """Configuration loading at application entry points only."""
 
 import os
-from dataclasses import dataclass
+import re
+from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
@@ -22,6 +23,7 @@ class Settings:
     host: str = "0.0.0.0"
     port: int = 8090
     data_dir: str = "./data"
+    strata_api_key: str = field(default="", repr=False)
 
     @classmethod
     def load(cls, *, values=None, server=True):
@@ -42,6 +44,9 @@ class Settings:
                 valid = False
             if not valid:
                 raise ValueError(key + " は有効なHTTP(S) URLを指定してください")
+        strata_api_key = get("STRATA_API_KEY").strip() if server else ""
+        if not re.fullmatch(r"[A-Za-z0-9._~+/=-]*", strata_api_key):
+            raise ValueError("STRATA_API_KEY に使用できる文字は ASCII 英数字と -._~+/= です")
         try:
             port = int(get("PORT", "8090"))
             if not 1 <= port <= 65535:
@@ -64,4 +69,5 @@ class Settings:
                    tz=tz, order=get("USAGE_ORDER", "claude-code,codex,antigravity"),
                    hide=get("USAGE_HIDE"), strata_url=get("STRATA_MONITOR_URL"),
                    usage_url=get("XANGI_USAGE_URL"), host=get("HOST", "0.0.0.0"),
-                   port=port, data_dir=str(Path(get("DATA_DIR", "./data")).expanduser()))
+                   port=port, data_dir=str(Path(get("DATA_DIR", "./data")).expanduser()),
+                   strata_api_key=strata_api_key)
